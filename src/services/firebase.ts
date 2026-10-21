@@ -35,24 +35,10 @@ import {
 import { getAnalytics, isSupported } from 'firebase/analytics';
 import { BlockItem, BlockFile } from '../types';
 
-// Dynamically determine authDomain:
-// When hosted on Vercel, use current host (e.g. life-of-blocks.vercel.app)
-// which reverse-proxies /__/auth/* to Firebase, sharing the first-party origin
-// and eliminating storage partitioning errors.
-export const getAuthDomain = (): string => {
-  if (typeof window !== 'undefined') {
-    const host = window.location.host;
-    if (host.includes('vercel.app')) {
-      return host;
-    }
-  }
-  return 'life-of-blocks.firebaseapp.com';
-};
-
 // Web App Firebase configuration provided by the user
 export const firebaseConfig = {
   apiKey: 'AIzaSyCDD1dWKCybEZH9pQJuFpqxILgopEFFMpM',
-  authDomain: getAuthDomain(),
+  authDomain: 'life-of-blocks.firebaseapp.com',
   projectId: 'life-of-blocks',
   storageBucket: 'life-of-blocks.firebasestorage.app',
   messagingSenderId: '853169901922',
