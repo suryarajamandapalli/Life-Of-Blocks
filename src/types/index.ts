@@ -10,6 +10,8 @@ export interface BlockFile {
   type: string;
   size: number;
   data: string;
+  cloudUrl?: string;
+  cloudDocId?: string;
 }
 
 export interface BlockItem {
@@ -17,6 +19,7 @@ export interface BlockItem {
   name: string;
   tasks: BlockTask[];
   files: BlockFile[];
+  updatedAt?: number;
 }
 
 export type Priority = 'low' | 'medium' | 'high' | 'urgent';

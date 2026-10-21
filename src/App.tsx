@@ -8,6 +8,12 @@ import {
   syncBlocksToFirestore,
   subscribeBlocksFromFirestore,
   handleRedirectResult,
+  uploadBlockFile,
+  loadFilePayload,
+  deleteBlockFileFromCloud,
+  deleteBlockFromCloud,
+  syncPreferencesToFirestore,
+  subscribePreferencesFromFirestore,
 } from './services/firebase';
 import { AppLauncherModal, WebAppItem, DEFAULT_WEB_APPS } from './components/apps/AppLauncherModal';
 import { WallpaperModal, WALLPAPERS } from './components/wallpaper/WallpaperModal';
@@ -169,10 +175,15 @@ export const App: React.FC = () => {
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
   const [isInitialAuthChecked, setIsInitialAuthChecked] = useState(false);
+  const [isSyncing, setIsSyncing] = useState(false);
 
   const blockInputRef = useRef<HTMLInputElement>(null);
   const taskInputRef = useRef<HTMLInputElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // Sync guards to prevent race condition overwrites between devices
+  const isRemoteUpdateRef = useRef(false);
+  const hasLoadedInitialRemoteRef = useRef(false);
 
   // Firebase Auth state subscription & mobile redirect listener
   useEffect(() => {
@@ -197,28 +208,95 @@ export const App: React.FC = () => {
     }
   }, [isInitialAuthChecked, currentUser]);
 
-  // Cloud Firestore Realtime synchronization for blocks
+  // Realtime Cloud Firestore synchronization for blocks
+  useEffect(() => {
+    if (!currentUser) {
+      hasLoadedInitialRemoteRef.current = false;
+      return;
+    }
+
+    setIsSyncing(true);
+    const unsubscribe = subscribeBlocksFromFirestore(currentUser.uid, (remoteBlocks) => {
+      isRemoteUpdateRef.current = true;
+      if (remoteBlocks && Array.isArray(remoteBlocks)) {
+        if (!hasLoadedInitialRemoteRef.current) {
+          hasLoadedInitialRemoteRef.current = true;
+          if (remoteBlocks.length > 0) {
+            // Cloud has data: adopt remote blocks on this device
+            setBlocks(remoteBlocks);
+          } else {
+            // First time user with empty cloud document: seed cloud with current blocks
+            if (blocks.length > 0) {
+              syncBlocksToFirestore(currentUser.uid, blocks);
+            }
+          }
+        } else {
+          // Live incoming update from another connected device: update blocks immediately!
+          setBlocks(remoteBlocks);
+        }
+      }
+      setIsSyncing(false);
+    });
+
+    return () => {
+      unsubscribe();
+    };
+  }, [currentUser?.uid]);
+
+  // Realtime Cloud Firestore synchronization for user preferences (theme, wallpaper, apps)
   useEffect(() => {
     if (!currentUser) return;
-    const unsubscribe = subscribeBlocksFromFirestore(currentUser.uid, (remoteBlocks) => {
-      if (remoteBlocks && Array.isArray(remoteBlocks) && remoteBlocks.length > 0) {
-        setBlocks(remoteBlocks);
-      } else {
-        // New user or empty cloud document: push current local blocks
-        syncBlocksToFirestore(currentUser.uid, blocks);
+    const unsubscribe = subscribePreferencesFromFirestore(currentUser.uid, (prefs) => {
+      if (!prefs) return;
+      if (prefs.theme && (prefs.theme === 'light' || prefs.theme === 'dark')) {
+        setTheme(prefs.theme);
+      }
+      if (typeof prefs.wallpaperIndex === 'number') {
+        setWallpaperIndex(prefs.wallpaperIndex);
+      }
+      if (Array.isArray(prefs.apps) && prefs.apps.length > 0) {
+        setApps(prefs.apps);
       }
     });
     return () => unsubscribe();
   }, [currentUser?.uid]);
 
-  // Debounced auto-save to Firestore when blocks change
+  // Debounced auto-save to Firestore when user makes local changes (only runs if initiated locally)
   useEffect(() => {
     if (!currentUser) return;
+    if (!hasLoadedInitialRemoteRef.current) return; // Wait until initial sync resolves to protect cloud data
+
+    if (isRemoteUpdateRef.current) {
+      // This change was triggered by incoming Firestore snapshot; do not push back to Firestore
+      isRemoteUpdateRef.current = false;
+      return;
+    }
+
+    setIsSyncing(true);
     const timer = setTimeout(() => {
-      syncBlocksToFirestore(currentUser.uid, blocks);
-    }, 700);
+      syncBlocksToFirestore(currentUser.uid, blocks)
+        .catch(console.error)
+        .finally(() => setIsSyncing(false));
+    }, 600);
+
     return () => clearTimeout(timer);
   }, [blocks, currentUser]);
+
+  // Debounced auto-save for user preferences across all devices
+  useEffect(() => {
+    if (!currentUser) return;
+    if (!hasLoadedInitialRemoteRef.current) return;
+
+    const timer = setTimeout(() => {
+      syncPreferencesToFirestore(currentUser.uid, {
+        theme,
+        wallpaperIndex,
+        apps,
+      }).catch(console.error);
+    }, 1000);
+
+    return () => clearTimeout(timer);
+  }, [theme, wallpaperIndex, apps, currentUser]);
 
   // Sync blocks to local storage
   useEffect(() => {
@@ -340,6 +418,9 @@ export const App: React.FC = () => {
       soundService.playDismiss();
       hapticsService.medium();
       setBlocks(prev => prev.filter(b => b.id !== id));
+      if (currentUser) {
+        deleteBlockFromCloud(currentUser.uid, id);
+      }
       if (activeBlockId === id) {
         setActiveBlockId(null);
       }
@@ -505,24 +586,27 @@ export const App: React.FC = () => {
     );
   };
 
-  // File handling
+  // File handling with Cloud Storage & cross-device realtime synchronization
   const handleFiles = (files: FileList | null) => {
     if (!files || !activeBlockId) return;
     soundService.playTap();
     hapticsService.medium();
 
     Array.from(files).forEach(file => {
+      const fileId = uid();
       const reader = new FileReader();
-      reader.onload = () => {
+
+      reader.onload = async () => {
         const fileData = reader.result as string;
         const newFile: BlockFile = {
-          id: uid(),
+          id: fileId,
           name: file.name,
           type: file.type || guessMime(file.name),
           size: file.size,
-          data: fileData
+          data: fileData, // instant zero-latency local preview
         };
 
+        // 1. Instantly display in UI
         setBlocks(prev =>
           prev.map(b => {
             if (b.id !== activeBlockId) return b;
@@ -532,7 +616,49 @@ export const App: React.FC = () => {
             };
           })
         );
+
+        // 2. If signed in, upload payload to Firebase Storage (with Firestore document fallback)
+        if (currentUser) {
+          setIsSyncing(true);
+          try {
+            const { cloudUrl, cloudDocId } = await uploadBlockFile(
+              currentUser.uid,
+              activeBlockId,
+              fileId,
+              file.name,
+              file,
+              file.type || guessMime(file.name)
+            );
+
+            // Update file in state with cloud references
+            setBlocks(prev => {
+              const updated = prev.map(b => {
+                if (b.id !== activeBlockId) return b;
+                return {
+                  ...b,
+                  files: (b.files || []).map(f => {
+                    if (f.id !== fileId) return f;
+                    return {
+                      ...f,
+                      cloudUrl: cloudUrl || f.cloudUrl,
+                      cloudDocId: cloudDocId || f.cloudDocId,
+                    };
+                  })
+                };
+              });
+
+              // Push sanitized block to Firestore
+              syncBlocksToFirestore(currentUser.uid, updated);
+              return updated;
+            });
+          } catch (uploadErr) {
+            console.error('File upload error:', uploadErr);
+          } finally {
+            setIsSyncing(false);
+          }
+        }
       };
+
       reader.readAsDataURL(file);
     });
   };
@@ -540,6 +666,14 @@ export const App: React.FC = () => {
   const removeFile = (fileId: string) => {
     soundService.playDismiss();
     hapticsService.light();
+
+    if (currentUser && activeBlockId) {
+      const fileToRemove = currentBlock?.files?.find(f => f.id === fileId);
+      if (fileToRemove) {
+        deleteBlockFileFromCloud(currentUser.uid, activeBlockId, fileId, fileToRemove.name).catch(() => {});
+      }
+    }
+
     setBlocks(prev =>
       prev.map(b => {
         if (b.id !== activeBlockId) return b;
@@ -555,10 +689,11 @@ export const App: React.FC = () => {
   };
 
   const fileToBlobUrl = (f: BlockFile): string => {
-    if (!f.data) return '';
+    const source = f.data || f.cloudUrl || '';
+    if (!source) return '';
     try {
-      if (f.data.startsWith('data:')) {
-        const parts = f.data.split(',');
+      if (source.startsWith('data:')) {
+        const parts = source.split(',');
         const mime = f.type || parts[0].match(/data:(.*?);/)?.[1] || 'application/octet-stream';
         const binary = atob(parts[1]);
         const bytes = new Uint8Array(binary.length);
@@ -569,15 +704,28 @@ export const App: React.FC = () => {
         setActiveBlobUrl(url);
         return url;
       }
-      return f.data;
+      return source;
     } catch {
-      return f.data;
+      return source;
     }
   };
 
-  const openViewer = (f: BlockFile) => {
+  const openViewer = async (f: BlockFile) => {
     soundService.playTap();
     hapticsService.light();
+
+    // If file was synced from cloud on this device and hasn't loaded payload yet
+    if ((!f.data || f.data === '') && currentUser) {
+      try {
+        const payload = await loadFilePayload(currentUser.uid, f);
+        if (payload) {
+          f.data = payload;
+        }
+      } catch (err) {
+        console.warn('Could not load cloud file payload:', err);
+      }
+    }
+
     fileToBlobUrl(f);
     setViewerFile(f);
     document.body.style.overflow = 'hidden';
@@ -681,6 +829,40 @@ export const App: React.FC = () => {
           </svg>
         </button>
       </div>
+
+      {/* CLOUD SYNC LIVE STATUS BADGE */}
+      {currentUser && (
+        <div
+          className="cloud-sync-status"
+          title={isSyncing ? 'Synchronizing with cloud...' : 'All blocks & files synced in realtime'}
+          style={{
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: '5px',
+            padding: '4px 10px',
+            borderRadius: '999px',
+            border: '1px solid rgba(255, 255, 255, 0.16)',
+            background: 'rgba(255, 255, 255, 0.08)',
+            fontSize: '11px',
+            fontWeight: 500,
+            color: isSyncing ? '#f59e0b' : '#34d399',
+            backdropFilter: 'blur(8px)',
+            userSelect: 'none',
+          }}
+        >
+          <span
+            style={{
+              width: '6px',
+              height: '6px',
+              borderRadius: '50%',
+              backgroundColor: isSyncing ? '#f59e0b' : '#10b981',
+              boxShadow: isSyncing ? '0 0 6px #f59e0b' : '0 0 6px #10b981',
+              transition: 'background-color 0.2s',
+            }}
+          />
+          <span>{isSyncing ? 'Syncing...' : 'Synced'}</span>
+        </div>
+      )}
 
       {/* USER ACCOUNT / GOOGLE SIGN-IN ONBOARDING BUTTON */}
       {currentUser ? (
@@ -947,9 +1129,9 @@ export const App: React.FC = () => {
                     >
                       <div className="filepreview">
                         {kind === 'image' ? (
-                          <img src={f.data} alt={f.name} />
+                          <img src={f.cloudUrl || f.data} alt={f.name} />
                         ) : kind === 'video' ? (
-                          <video src={f.data} muted preload="metadata" />
+                          <video src={f.cloudUrl || f.data} muted preload="metadata" />
                         ) : (
                           <div className="fileicon">{extOf(f).slice(0, 5)}</div>
                         )}
@@ -1170,7 +1352,7 @@ export const App: React.FC = () => {
                 <a
                   id="downloadBtn"
                   className="download"
-                  href={activeBlobUrl || viewerFile.data}
+                  href={activeBlobUrl || viewerFile.cloudUrl || viewerFile.data}
                   download={viewerFile.name}
                 >
                   Save
@@ -1188,7 +1370,7 @@ export const App: React.FC = () => {
             <div id="viewerBody" className="viewerbody">
               {(() => {
                 const kind = kindOf(viewerFile);
-                const fileUrl = activeBlobUrl || viewerFile.data;
+                const fileUrl = activeBlobUrl || viewerFile.cloudUrl || viewerFile.data;
 
                 if (kind === 'image') {
                   return <img src={fileUrl} alt={viewerFile.name} />;
