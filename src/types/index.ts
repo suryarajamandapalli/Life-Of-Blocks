@@ -2,6 +2,7 @@ export interface BlockTask {
   id: string;
   text: string;
   done: boolean;
+  createdAt?: number;
 }
 
 export interface BlockFile {
@@ -11,14 +12,19 @@ export interface BlockFile {
   size: number;
   data: string;
   cloudUrl?: string;
+  storagePath?: string;
   cloudDocId?: string;
+  ownerUid?: string;
+  createdAt?: number;
 }
 
 export interface BlockItem {
   id: string;
   name: string;
+  ownerUid?: string;
   tasks: BlockTask[];
   files: BlockFile[];
+  createdAt?: number;
   updatedAt?: number;
 }
 

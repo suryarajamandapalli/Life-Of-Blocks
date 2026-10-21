@@ -34,8 +34,8 @@ import { BlockItem, BlockFile } from '../types';
 
 // Dynamically determine authDomain:
 // When hosted on Vercel, use current host (e.g. life-of-blocks.vercel.app)
-// which proxies /__/auth/* to Firebase, completely eliminating the cross-origin
-// storage partitioning "missing initial state" error!
+// which reverse-proxies /__/auth/* to Firebase, sharing the first-party origin
+// and eliminating storage partitioning errors.
 export const getAuthDomain = (): string => {
   if (typeof window !== 'undefined') {
     const host = window.location.host;
@@ -155,7 +155,7 @@ export function subscribeAuthState(callback: (user: User | null) => void) {
 }
 
 /**
- * Helper to convert Blob to DataURL string
+ * Convert Blob to Data URL
  */
 function blobToDataUrl(blob: Blob): Promise<string> {
   return new Promise((resolve, reject) => {
@@ -167,23 +167,26 @@ function blobToDataUrl(blob: Blob): Promise<string> {
 }
 
 /**
- * Upload an attachment to Firebase Storage (primary) with Firestore fallback.
- * Returns the public or storage download URL and optional cloud document ID.
+ * Upload a file to Firebase Storage under `users/{uid}/files/{fileId}_{fileName}`.
+ * The cloud storage is the single source of truth for files across all devices.
  */
-export async function uploadBlockFile(
+export async function uploadUserFile(
   uid: string,
   blockId: string,
-  fileId: string,
-  fileName: string,
   fileDataOrBlob: Blob | string,
+  fileName: string,
+  fileId: string,
   mimeType?: string
-): Promise<{ cloudUrl?: string; cloudDocId?: string }> {
-  if (!uid || !fileId) return {};
+): Promise<{ cloudUrl: string; storagePath: string }> {
+  if (!uid || !fileId) {
+    throw new Error('User UID and File ID are required for cloud file storage.');
+  }
 
-  // 1. Try Firebase Cloud Storage first
+  const safeName = fileName.replace(/[^a-zA-Z0-9._-]/g, '_');
+  const storagePath = `users/${uid}/files/${fileId}_${safeName}`;
+
   try {
-    const safeName = fileName.replace(/[^a-zA-Z0-9._-]/g, '_');
-    const storageRef = ref(storage, `users/${uid}/blocks/${blockId}/${fileId}_${safeName}`);
+    const storageRef = ref(storage, storagePath);
 
     if (fileDataOrBlob instanceof Blob) {
       await uploadBytes(storageRef, fileDataOrBlob, { contentType: mimeType || fileDataOrBlob.type });
@@ -191,87 +194,63 @@ export async function uploadBlockFile(
       await uploadString(storageRef, fileDataOrBlob, 'data_url');
     }
 
-    const downloadUrl = await getDownloadURL(storageRef);
-    return { cloudUrl: downloadUrl };
+    const cloudUrl = await getDownloadURL(storageRef);
+    return { cloudUrl, storagePath };
   } catch (storageError) {
-    console.warn('Firebase Storage upload failed or not enabled, using Cloud Firestore fallback:', storageError);
-  }
+    console.warn('Firebase Storage direct upload error, attempting Firestore fallback:', storageError);
 
-  // 2. Resilient Fallback: Store payload in Firestore files subcollection (up to 950KB)
-  try {
-    let dataUrl = '';
-    if (typeof fileDataOrBlob === 'string') {
-      dataUrl = fileDataOrBlob;
-    } else if (fileDataOrBlob instanceof Blob) {
-      dataUrl = await blobToDataUrl(fileDataOrBlob);
-    }
-
-    // Only store in Firestore if under Firestore doc limit (~950KB)
-    if (dataUrl && dataUrl.length < 950000) {
+    // Resilient fallback: store payload in users/{uid}/files/{fileId}
+    let dataUrl = typeof fileDataOrBlob === 'string' ? fileDataOrBlob : await blobToDataUrl(fileDataOrBlob);
+    if (dataUrl && dataUrl.length < 900000) {
       const fileDocRef = doc(db, 'users', uid, 'files', fileId);
       await setDoc(fileDocRef, {
-        fileId,
+        id: fileId,
+        ownerUid: uid,
         blockId,
         name: fileName,
         type: mimeType || '',
         dataUrl,
+        storagePath: `firestore:users/${uid}/files/${fileId}`,
         updatedAt: serverTimestamp(),
       });
-      return { cloudDocId: fileId };
+      return { cloudUrl: dataUrl, storagePath: `firestore:${fileId}` };
     }
-  } catch (firestoreDocError) {
-    console.error('Failed to store file in Firestore fallback:', firestoreDocError);
+    throw storageError;
   }
-
-  return {};
 }
 
 /**
- * Retrieve file payload on another device when needed
+ * Delete a file from Cloud Storage
  */
-export async function loadFilePayload(uid: string, file: BlockFile): Promise<string> {
-  if (file.cloudUrl) return file.cloudUrl;
-  if (file.data && (file.data.startsWith('data:') || file.data.startsWith('http') || file.data.startsWith('blob:'))) {
-    return file.data;
-  }
-  if (file.cloudDocId) {
-    try {
-      const snap = await getDoc(doc(db, 'users', uid, 'files', file.cloudDocId));
-      if (snap.exists() && snap.data()?.dataUrl) {
-        return snap.data()?.dataUrl;
-      }
-    } catch (e) {
-      console.warn('Error loading file payload from cloud:', e);
-    }
-  }
-  return file.data || '';
-}
+export async function deleteUserFile(storagePath?: string): Promise<void> {
+  if (!storagePath) return;
 
-/**
- * Remove attachment from cloud
- */
-export async function deleteBlockFileFromCloud(
-  uid: string,
-  blockId: string,
-  fileId: string,
-  fileName: string
-): Promise<void> {
-  if (!uid || !fileId) return;
+  if (storagePath.startsWith('firestore:')) {
+    const fileId = storagePath.replace('firestore:', '').split('/').pop();
+    if (fileId) {
+      try {
+        const uid = auth.currentUser?.uid;
+        if (uid) {
+          await deleteDoc(doc(db, 'users', uid, 'files', fileId));
+        }
+      } catch {}
+    }
+    return;
+  }
+
   try {
-    const safeName = fileName.replace(/[^a-zA-Z0-9._-]/g, '_');
-    const storageRef = ref(storage, `users/${uid}/blocks/${blockId}/${fileId}_${safeName}`);
+    const storageRef = ref(storage, storagePath);
     await deleteObject(storageRef).catch(() => {});
-  } catch {}
-
-  try {
-    await deleteDoc(doc(db, 'users', uid, 'files', fileId)).catch(() => {});
-  } catch {}
+  } catch (e) {
+    console.warn('Error deleting cloud file:', e);
+  }
 }
 
 /**
- * Sanitize a block for cloud storage to ensure it never exceeds Firestore document limits
+ * Sanitize a block before writing to Firestore.
+ * Prevents huge base64 strings from bloating block documents, ensuring fast realtime sync.
  */
-export function sanitizeBlockForCloud(block: BlockItem): BlockItem {
+export function sanitizeBlockForCloud(block: BlockItem, uid: string): BlockItem {
   const sanitizedFiles: BlockFile[] = (block.files || []).map((f) => {
     const isLargeBase64 = typeof f.data === 'string' && f.data.startsWith('data:') && f.data.length > 25000;
     return {
@@ -280,7 +259,9 @@ export function sanitizeBlockForCloud(block: BlockItem): BlockItem {
       type: f.type,
       size: f.size,
       cloudUrl: f.cloudUrl || (f.data.startsWith('http') ? f.data : ''),
-      cloudDocId: f.cloudDocId || (isLargeBase64 ? f.id : undefined),
+      storagePath: f.storagePath || (f.cloudUrl ? `users/${uid}/files/${f.id}` : undefined),
+      ownerUid: uid,
+      createdAt: f.createdAt || Date.now(),
       // In cloud doc, avoid storing huge base64 strings
       data: isLargeBase64 ? (f.cloudUrl || '') : f.data,
     };
@@ -289,167 +270,222 @@ export function sanitizeBlockForCloud(block: BlockItem): BlockItem {
   return {
     id: block.id,
     name: block.name,
-    tasks: block.tasks || [],
+    ownerUid: uid,
+    tasks: (block.tasks || []).map((t) => ({
+      id: t.id,
+      text: t.text,
+      done: !!t.done,
+      createdAt: t.createdAt || Date.now(),
+    })),
     files: sanitizedFiles,
-    updatedAt: block.updatedAt || Date.now(),
+    createdAt: block.createdAt || Date.now(),
+    updatedAt: Date.now(),
   };
 }
 
 /**
- * Save user blocks to Cloud Firestore (both individual subcollections and root user document)
+ * Save an individual block to Firestore under `users/{uid}/blocks/{blockId}`
  */
-export async function syncBlocksToFirestore(uid: string, blocks: BlockItem[]): Promise<void> {
+export async function saveUserBlock(uid: string, block: BlockItem): Promise<void> {
+  if (!uid || !block.id) return;
+  try {
+    const sanitized = sanitizeBlockForCloud(block, uid);
+    const blockDocRef = doc(db, 'users', uid, 'blocks', block.id);
+    await setDoc(blockDocRef, sanitized, { merge: true });
+  } catch (error) {
+    console.error('Failed to save block to Firestore:', error);
+    throw error;
+  }
+}
+
+/**
+ * Delete an individual block from Firestore under `users/{uid}/blocks/{blockId}`
+ */
+export async function deleteUserBlock(uid: string, blockId: string): Promise<void> {
+  if (!uid || !blockId) return;
+  try {
+    const blockDocRef = doc(db, 'users', uid, 'blocks', blockId);
+    await deleteDoc(blockDocRef);
+  } catch (error) {
+    console.error('Failed to delete block from Firestore:', error);
+    throw error;
+  }
+}
+
+/**
+ * Batch synchronize all blocks for a user to Firestore.
+ */
+export async function syncUserBlocks(uid: string, blocks: BlockItem[]): Promise<void> {
   if (!uid) return;
   try {
-    const sanitizedBlocks = blocks.map(sanitizeBlockForCloud);
-
-    // 1. Sync to each individual subcollection document for fast granular updates
-    const writePromises = sanitizedBlocks.map((block) => {
-      const blockDocRef = doc(db, 'users', uid, 'blocks', block.id);
-      return setDoc(blockDocRef, block, { merge: true });
-    });
-
-    // 2. Also update root user document with full array
-    const userDocRef = doc(db, 'users', uid);
-    writePromises.push(
-      setDoc(
-        userDocRef,
-        {
-          blocks: sanitizedBlocks,
-          updatedAt: serverTimestamp(),
-        },
-        { merge: true }
-      )
-    );
-
-    await Promise.all(writePromises);
+    const promises = blocks.map((b) => saveUserBlock(uid, b));
+    await Promise.all(promises);
   } catch (error) {
     console.error('Failed to sync blocks to Firestore:', error);
   }
 }
 
 /**
- * Delete a block from Firestore
+ * Real-time subscription to user's blocks in Cloud Firestore.
+ * When ANY client (Web, Android APK, Desktop) creates, modifies, or deletes a block,
+ * all other clients receive the update in real-time.
  */
-export async function deleteBlockFromCloud(uid: string, blockId: string): Promise<void> {
-  if (!uid || !blockId) return;
-  try {
-    await deleteDoc(doc(db, 'users', uid, 'blocks', blockId)).catch(() => {});
-  } catch (e) {
-    console.warn('Error deleting block doc:', e);
-  }
-}
-
-/**
- * Subscribe to realtime Cloud Firestore updates for user blocks
- * Listens to the `blocks` subcollection and falls back to root document
- */
-export function subscribeBlocksFromFirestore(
+export function subscribeUserBlocks(
   uid: string,
   onUpdate: (blocks: BlockItem[]) => void
 ) {
   if (!uid) return () => {};
 
   const blocksColRef = collection(db, 'users', uid, 'blocks');
-  let hasReceivedSubcollection = false;
 
-  // Listen to subcollection
-  const unsubscribeSubcol = onSnapshot(
+  return onSnapshot(
     blocksColRef,
-    (snap) => {
-      if (!snap.empty) {
-        hasReceivedSubcollection = true;
-        const loadedBlocks: BlockItem[] = [];
-        snap.forEach((docSnap) => {
-          const data = docSnap.data() as BlockItem;
-          if (data && data.id && data.name) {
-            loadedBlocks.push({
-              ...data,
-              tasks: data.tasks || [],
-              files: (data.files || []).map((f) => ({
-                ...f,
-                data: f.cloudUrl || f.data || '',
-              })),
-            });
-          }
-        });
-        onUpdate(loadedBlocks);
-      } else if (!hasReceivedSubcollection) {
-        // Subcollection is empty, check root user document
-        const userDocRef = doc(db, 'users', uid);
-        getDoc(userDocRef).then((userSnap) => {
-          if (userSnap.exists()) {
-            const data = userSnap.data();
-            if (Array.isArray(data.blocks)) {
-              onUpdate(
-                data.blocks.map((b: BlockItem) => ({
-                  ...b,
-                  tasks: b.tasks || [],
-                  files: (b.files || []).map((f) => ({
-                    ...f,
-                    data: f.cloudUrl || f.data || '',
-                  })),
-                }))
-              );
-            }
-          }
-        }).catch(() => {});
-      }
+    (snapshot) => {
+      const cloudBlocks: BlockItem[] = [];
+      snapshot.forEach((docSnap) => {
+        const data = docSnap.data() as BlockItem;
+        if (data && data.id && data.name) {
+          cloudBlocks.push({
+            id: data.id,
+            name: data.name,
+            ownerUid: uid,
+            tasks: data.tasks || [],
+            files: (data.files || []).map((f) => ({
+              ...f,
+              data: f.cloudUrl || f.data || '',
+            })),
+            createdAt: data.createdAt,
+            updatedAt: data.updatedAt,
+          });
+        }
+      });
+
+      // Sort consistently by createdAt
+      cloudBlocks.sort((a, b) => (a.createdAt || 0) - (b.createdAt || 0));
+
+      onUpdate(cloudBlocks);
     },
     (error) => {
-      console.warn('Firestore blocks subcollection listener error:', error);
+      console.warn('Realtime Cloud Firestore blocks subscription error:', error);
     }
   );
-
-  return () => {
-    unsubscribeSubcol();
-  };
 }
 
 /**
- * Save user preferences (theme, wallpaper, apps list) to Firestore
+ * Subscribe to user preferences in Cloud Firestore under `users/{uid}/preferences/settings`
  */
-export async function syncPreferencesToFirestore(
+export function subscribeUserPreferences(
+  uid: string,
+  onUpdate: (prefs: { theme?: string; wallpaperIndex?: number; apps?: any[] }) => void
+) {
+  if (!uid) return () => {};
+
+  const prefDocRef = doc(db, 'users', uid, 'preferences', 'settings');
+
+  return onSnapshot(
+    prefDocRef,
+    (snap) => {
+      if (snap.exists()) {
+        const data = snap.data();
+        if (data) {
+          onUpdate(data);
+        }
+      }
+    },
+    (error) => {
+      console.warn('Preferences listener error:', error);
+    }
+  );
+}
+
+/**
+ * Save user preferences to Cloud Firestore
+ */
+export async function saveUserPreferences(
   uid: string,
   prefs: { theme?: string; wallpaperIndex?: number; apps?: any[] }
 ): Promise<void> {
   if (!uid) return;
   try {
-    const userDocRef = doc(db, 'users', uid);
-    await setDoc(
-      userDocRef,
-      {
-        preferences: prefs,
-        updatedAt: serverTimestamp(),
-      },
-      { merge: true }
-    );
+    const prefDocRef = doc(db, 'users', uid, 'preferences', 'settings');
+    await setDoc(prefDocRef, { ...prefs, updatedAt: serverTimestamp() }, { merge: true });
   } catch (error) {
-    console.error('Failed to sync preferences to Firestore:', error);
+    console.error('Failed to save preferences to Firestore:', error);
   }
 }
 
 /**
- * Subscribe to realtime Cloud Firestore updates for user preferences
+ * Load file payload if not already in memory (handles Cloud Storage URLs and Firestore fallback)
  */
-export function subscribePreferencesFromFirestore(
-  uid: string,
-  onUpdate: (prefs: { theme?: string; wallpaperIndex?: number; apps?: any[] }) => void
-) {
-  if (!uid) return () => {};
-  const userDocRef = doc(db, 'users', uid);
-  return onSnapshot(
-    userDocRef,
-    (snap) => {
-      if (snap.exists()) {
-        const data = snap.data();
-        if (data.preferences) {
-          onUpdate(data.preferences);
+export async function loadFilePayload(uid: string, file: BlockFile): Promise<string> {
+  if (file.data && file.data.startsWith('data:')) {
+    return file.data;
+  }
+  if (file.cloudUrl && file.cloudUrl.startsWith('http')) {
+    return file.cloudUrl;
+  }
+  if (file.storagePath) {
+    if (file.storagePath.startsWith('firestore:')) {
+      const fileId = file.storagePath.replace('firestore:', '').replace(`users/${uid}/files/`, '');
+      try {
+        const fileSnap = await getDoc(doc(db, 'users', uid, 'files', fileId));
+        if (fileSnap.exists()) {
+          const d = fileSnap.data();
+          return d.dataUrl || d.cloudUrl || '';
         }
+      } catch (e) {
+        console.warn('Error fetching file payload from Firestore:', e);
       }
-    },
-    (error) => {
-      console.warn('Firestore preferences listener error:', error);
+    } else {
+      try {
+        const storageRef = ref(storage, file.storagePath);
+        return await getDownloadURL(storageRef);
+      } catch (e) {
+        console.warn('Error fetching download URL from Storage:', e);
+      }
     }
-  );
+  }
+  return file.cloudUrl || file.data || '';
 }
+
+/**
+ * Compatible wrapper for uploading a block file
+ */
+export async function uploadBlockFile(
+  uid: string,
+  blockId: string,
+  fileId: string,
+  fileName: string,
+  fileDataOrBlob: Blob | string,
+  mimeType?: string
+): Promise<{ cloudUrl: string; storagePath: string; cloudDocId?: string }> {
+  const res = await uploadUserFile(uid, blockId, fileDataOrBlob, fileName, fileId, mimeType);
+  return {
+    cloudUrl: res.cloudUrl,
+    storagePath: res.storagePath,
+    cloudDocId: fileId,
+  };
+}
+
+/**
+ * Compatible wrapper for deleting a block file from cloud
+ */
+export async function deleteBlockFileFromCloud(
+  uid: string,
+  _blockId: string,
+  fileId: string,
+  fileName?: string
+): Promise<void> {
+  const safeName = (fileName || '').replace(/[^a-zA-Z0-9._-]/g, '_');
+  const path = safeName ? `users/${uid}/files/${fileId}_${safeName}` : `users/${uid}/files/${fileId}`;
+  await deleteUserFile(path);
+  await deleteUserFile(`firestore:${fileId}`);
+}
+
+// Aliases for seamless integration with all parts of the application
+export const subscribeBlocksFromFirestore = subscribeUserBlocks;
+export const syncBlocksToFirestore = syncUserBlocks;
+export const deleteBlockFromCloud = deleteUserBlock;
+export const subscribePreferencesFromFirestore = subscribeUserPreferences;
+export const syncPreferencesToFirestore = saveUserPreferences;
+

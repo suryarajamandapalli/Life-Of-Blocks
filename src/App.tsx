@@ -5,15 +5,23 @@ import { soundService } from './services/sound';
 import { hapticsService } from './services/haptics';
 import {
   subscribeAuthState,
-  syncBlocksToFirestore,
-  subscribeBlocksFromFirestore,
+  subscribeUserBlocks,
+  saveUserBlock,
+  deleteUserBlock,
+  syncUserBlocks,
+  uploadUserFile,
+  deleteUserFile,
+  subscribeUserPreferences,
+  saveUserPreferences,
   handleRedirectResult,
-  uploadBlockFile,
-  loadFilePayload,
-  deleteBlockFileFromCloud,
+  subscribeBlocksFromFirestore,
+  syncBlocksToFirestore,
   deleteBlockFromCloud,
-  syncPreferencesToFirestore,
   subscribePreferencesFromFirestore,
+  syncPreferencesToFirestore,
+  uploadBlockFile,
+  deleteBlockFileFromCloud,
+  loadFilePayload,
 } from './services/firebase';
 import { AppLauncherModal, WebAppItem, DEFAULT_WEB_APPS } from './components/apps/AppLauncherModal';
 import { WallpaperModal, WALLPAPERS } from './components/wallpaper/WallpaperModal';
@@ -113,7 +121,7 @@ const kindOf = (f: BlockFile): 'image' | 'video' | 'audio' | 'pdf' | 'text' | 'f
 export const App: React.FC = () => {
   const [blocks, setBlocks] = useState<BlockItem[]>(() => {
     try {
-      const saved = localStorage.getItem('lifeOfBlocks');
+      const saved = localStorage.getItem('lifeOfBlocks_guest') || localStorage.getItem('lifeOfBlocks');
       if (saved) {
         const parsed = JSON.parse(saved);
         if (Array.isArray(parsed) && parsed.length > 0) return parsed;
@@ -190,7 +198,26 @@ export const App: React.FC = () => {
     handleRedirectResult().catch((err) => console.error('Redirect sign-in check:', err));
 
     const unsubscribe = subscribeAuthState((user) => {
-      setCurrentUser(user);
+      setCurrentUser((prevUser) => {
+        if (!user && prevUser) {
+          // User just logged out: clear in-memory blocks and active views
+          setBlocks(DEFAULT_BLOCKS);
+          setActiveBlockId(null);
+          setViewerFile(null);
+        } else if (user && (!prevUser || prevUser.uid !== user.uid)) {
+          // User just logged in: try to read this specific user's offline cache while Firestore connects
+          try {
+            const cached = localStorage.getItem(`lifeOfBlocks_cache_${user.uid}`);
+            if (cached) {
+              const parsed = JSON.parse(cached);
+              if (Array.isArray(parsed) && parsed.length > 0) {
+                setBlocks(parsed);
+              }
+            }
+          } catch {}
+        }
+        return user;
+      });
       setIsInitialAuthChecked(true);
     });
 
@@ -222,17 +249,31 @@ export const App: React.FC = () => {
         if (!hasLoadedInitialRemoteRef.current) {
           hasLoadedInitialRemoteRef.current = true;
           if (remoteBlocks.length > 0) {
-            // Cloud has data: adopt remote blocks on this device
+            // Cloud has authoritative data: adopt remote blocks on this device
             setBlocks(remoteBlocks);
+            try {
+              localStorage.setItem(`lifeOfBlocks_cache_${currentUser.uid}`, JSON.stringify(remoteBlocks));
+            } catch {}
           } else {
-            // First time user with empty cloud document: seed cloud with current blocks
-            if (blocks.length > 0) {
-              syncBlocksToFirestore(currentUser.uid, blocks);
-            }
+            // Brand new account with zero cloud blocks: seed with clean DEFAULT_BLOCKS for this user
+            const seeded = DEFAULT_BLOCKS.map(b => ({
+              ...b,
+              id: 'block-' + uid(),
+              ownerUid: currentUser.uid,
+              createdAt: Date.now(),
+            }));
+            setBlocks(seeded);
+            syncBlocksToFirestore(currentUser.uid, seeded);
+            try {
+              localStorage.setItem(`lifeOfBlocks_cache_${currentUser.uid}`, JSON.stringify(seeded));
+            } catch {}
           }
         } else {
-          // Live incoming update from another connected device: update blocks immediately!
+          // Real-time update from another connected device: update blocks immediately!
           setBlocks(remoteBlocks);
+          try {
+            localStorage.setItem(`lifeOfBlocks_cache_${currentUser.uid}`, JSON.stringify(remoteBlocks));
+          } catch {}
         }
       }
       setIsSyncing(false);
@@ -298,14 +339,18 @@ export const App: React.FC = () => {
     return () => clearTimeout(timer);
   }, [theme, wallpaperIndex, apps, currentUser]);
 
-  // Sync blocks to local storage
+  // Secondary offline cache (strictly scoped to user UID to prevent cross-account leakage)
   useEffect(() => {
     try {
-      localStorage.setItem('lifeOfBlocks', JSON.stringify(blocks));
+      if (currentUser) {
+        localStorage.setItem(`lifeOfBlocks_cache_${currentUser.uid}`, JSON.stringify(blocks));
+      } else {
+        localStorage.setItem('lifeOfBlocks_guest', JSON.stringify(blocks));
+      }
     } catch (e) {
-      console.warn('LocalStorage save error:', e);
+      console.warn('LocalStorage cache error:', e);
     }
-  }, [blocks]);
+  }, [blocks, currentUser]);
 
   // Sync apps to local storage
   useEffect(() => {
