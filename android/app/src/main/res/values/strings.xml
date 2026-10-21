@@ -4,4 +4,5 @@
     <string name="title_activity_main">Life of Blocks</string>
     <string name="package_name">com.msr.lifeofblocks</string>
     <string name="custom_url_scheme">com.msr.lifeofblocks</string>
+    <string name="server_client_id">853169901922-7snl0o0p9amuaepog2qi5tqt4qhi0mf8.apps.googleusercontent.com</string>
 </resources>

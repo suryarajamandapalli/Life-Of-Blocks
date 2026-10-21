@@ -4,6 +4,7 @@ import {
   GoogleAuthProvider,
   signInWithPopup,
   signInWithRedirect,
+  signInWithCredential,
   getRedirectResult,
   signOut,
   onAuthStateChanged,
@@ -11,6 +12,8 @@ import {
   signInWithEmailAndPassword,
   User,
 } from 'firebase/auth';
+import { Capacitor } from '@capacitor/core';
+import { GoogleAuth } from '@codetrix-studio/capacitor-google-auth';
 import {
   getFirestore,
   doc,
@@ -80,9 +83,59 @@ googleProvider.setCustomParameters({
 });
 
 /**
- * Sign in with Google using popup, with clean cancellation handling and redirect fallback
+ * Sign in with Google:
+ * - On Native Android / iOS: Uses native Google Play Services via @codetrix-studio/capacitor-google-auth
+ *   without any WebView popups or redirects, returning idToken directly to Firebase Auth.
+ * - On Web / Desktop Browser: Uses Firebase Auth standard popup with redirect fallback.
  */
 export async function signInWithGoogle(): Promise<User> {
+  const isNative = Capacitor.isNativePlatform();
+
+  if (isNative) {
+    try {
+      try {
+        GoogleAuth.initialize({
+          clientId: '853169901922-7snl0o0p9amuaepog2qi5tqt4qhi0mf8.apps.googleusercontent.com',
+          scopes: ['profile', 'email'],
+          grantOfflineAccess: true,
+        });
+      } catch {}
+
+      const googleUser = await GoogleAuth.signIn();
+      const idToken = googleUser?.authentication?.idToken;
+      if (!idToken) {
+        throw new Error('Google Sign-In failed to retrieve authentication token.');
+      }
+
+      const credential = GoogleAuthProvider.credential(idToken);
+      const userCredential = await signInWithCredential(auth, credential);
+      return userCredential.user;
+    } catch (nativeErr: any) {
+      console.warn('Native Google Auth error:', nativeErr);
+      const msg = (nativeErr?.message || '').toLowerCase();
+      if (
+        msg.includes('cancel') ||
+        nativeErr.code === '12501' ||
+        nativeErr.code === 12501 ||
+        msg.includes('12501')
+      ) {
+        throw new Error('Sign-in cancelled.');
+      }
+      if (
+        nativeErr.code === '10' ||
+        nativeErr.code === 10 ||
+        msg.includes('developer_error') ||
+        msg.includes(': 10')
+      ) {
+        throw new Error(
+          'Google Play Services requires adding your Android SHA-1 fingerprint in Firebase Console. You can also sign in instantly using the Email tab.'
+        );
+      }
+      throw nativeErr;
+    }
+  }
+
+  // Web Browser Flow
   try {
     const result = await signInWithPopup(auth, googleProvider);
     return result.user;

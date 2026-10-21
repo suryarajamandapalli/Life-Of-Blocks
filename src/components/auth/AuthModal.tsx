@@ -20,8 +20,8 @@ export const AuthModal: React.FC<AuthModalProps> = ({
   const [loading, setLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
-  // Email / Password sign-in option for environments with strict popup restrictions
-  const [showEmailForm, setShowEmailForm] = useState(false);
+  // Tab selection: 'google' or 'email'
+  const [authTab, setAuthTab] = useState<'google' | 'email'>('google');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [isSignUp, setIsSignUp] = useState(false);
@@ -49,7 +49,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
         setErrorMsg('Network error. Check your connection.');
       } else if (err.code === 'auth/popup-blocked') {
         setErrorMsg('Popup was blocked by your browser. Please allow popups or sign in with Email below.');
-        setShowEmailForm(true);
+        setAuthTab('email');
       } else {
         setErrorMsg(err.message || 'Unable to sign in with Google.');
       }
@@ -355,6 +355,71 @@ export const AuthModal: React.FC<AuthModalProps> = ({
               </div>
             </div>
 
+            {/* Auth Method Segmented Tabs */}
+            <div
+              style={{
+                display: 'flex',
+                background: 'rgba(255, 255, 255, 0.06)',
+                borderRadius: '14px',
+                padding: '4px',
+                margin: '0 0 20px',
+                border: '1px solid rgba(255, 255, 255, 0.1)',
+              }}
+            >
+              <button
+                type="button"
+                onClick={() => {
+                  soundService.playTap();
+                  setAuthTab('google');
+                  setErrorMsg(null);
+                }}
+                style={{
+                  flex: 1,
+                  height: '36px',
+                  borderRadius: '10px',
+                  border: 0,
+                  background: authTab === 'google' ? 'rgba(255, 255, 255, 0.16)' : 'transparent',
+                  color: authTab === 'google' ? '#fff' : 'var(--c-muted)',
+                  fontWeight: authTab === 'google' ? 600 : 500,
+                  fontSize: '13.5px',
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: '6px',
+                  transition: 'all 0.2s ease',
+                }}
+              >
+                <span>Google</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  soundService.playTap();
+                  setAuthTab('email');
+                  setErrorMsg(null);
+                }}
+                style={{
+                  flex: 1,
+                  height: '36px',
+                  borderRadius: '10px',
+                  border: 0,
+                  background: authTab === 'email' ? 'rgba(255, 255, 255, 0.16)' : 'transparent',
+                  color: authTab === 'email' ? '#fff' : 'var(--c-muted)',
+                  fontWeight: authTab === 'email' ? 600 : 500,
+                  fontSize: '13.5px',
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: '6px',
+                  transition: 'all 0.2s ease',
+                }}
+              >
+                <span>Email & Password</span>
+              </button>
+            </div>
+
             {errorMsg && (
               <div
                 style={{
@@ -365,167 +430,188 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                   border: '1px solid rgba(239, 68, 68, 0.3)',
                   color: '#f87171',
                   fontSize: '13px',
+                  textAlign: 'left',
+                  lineHeight: 1.4,
                 }}
               >
                 {errorMsg}
+                {authTab === 'google' && (
+                  <div style={{ marginTop: '8px' }}>
+                    <button
+                      type="button"
+                      onClick={() => setAuthTab('email')}
+                      style={{
+                        background: 'rgba(255, 255, 255, 0.12)',
+                        border: '1px solid rgba(255, 255, 255, 0.2)',
+                        borderRadius: '8px',
+                        padding: '4px 10px',
+                        color: '#fff',
+                        fontSize: '12px',
+                        cursor: 'pointer',
+                      }}
+                    >
+                      Use Email & Password Instead →
+                    </button>
+                  </div>
+                )}
               </div>
             )}
 
-            {/* Google Sign In Button */}
-            <button
-              type="button"
-              onClick={handleGoogleSignIn}
-              disabled={loading}
-              style={{
-                width: '100%',
-                height: '48px',
-                borderRadius: '16px',
-                border: '1px solid rgba(255, 255, 255, 0.20)',
-                background: '#ffffff',
-                color: '#0f172a',
-                fontSize: '15px',
-                fontWeight: 600,
-                cursor: 'pointer',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                gap: '12px',
-                boxShadow: '0 8px 24px rgba(0, 0, 0, 0.35)',
-                transition: 'transform 0.2s ease, opacity 0.2s ease',
-              }}
-              onMouseEnter={(e) => (e.currentTarget.style.transform = 'scale(1.02)')}
-              onMouseLeave={(e) => (e.currentTarget.style.transform = 'scale(1)')}
-            >
-              {/* Google G Logo */}
-              <svg width="20" height="20" viewBox="0 0 24 24">
-                <path
-                  fill="#4285F4"
-                  d="M23.745 12.27c0-.7-.06-1.4-.19-2.07H12v4.51h6.6c-.29 1.52-1.14 2.8-2.4 3.65v3.03h3.88c2.28-2.09 3.665-5.17 3.665-9.12z"
-                />
-                <path
-                  fill="#34A853"
-                  d="M12 24c3.24 0 5.95-1.08 7.93-2.91l-3.88-3.03c-1.08.72-2.45 1.16-4.05 1.16-3.12 0-5.77-2.1-6.72-4.93H1.25v3.13C3.26 21.36 7.33 24 12 24z"
-                />
-                <path
-                  fill="#FBBC05"
-                  d="M5.28 14.29c-.25-.72-.38-1.49-.38-2.29s.13-1.57.38-2.29V6.58H1.25C.45 8.18 0 10.03 0 12s.45 3.82 1.25 5.42l4.03-3.13z"
-                />
-                <path
-                  fill="#EA4335"
-                  d="M12 4.75c1.77 0 3.35.61 4.6 1.8l3.42-3.42C17.95 1.19 15.24 0 12 0 7.33 0 3.26 2.64 1.25 6.58l4.03 3.13c.95-2.83 3.6-4.96 6.72-4.96z"
-                />
-              </svg>
-              <span>{loading ? 'Connecting with Google...' : 'Continue with Google'}</span>
-            </button>
-
-            {/* Email Authentication Fallback Option */}
-            <div style={{ marginTop: '16px' }}>
-              {!showEmailForm ? (
+            {authTab === 'google' ? (
+              <div>
                 <button
                   type="button"
-                  onClick={() => {
-                    soundService.playTap();
-                    setShowEmailForm(true);
-                  }}
+                  onClick={handleGoogleSignIn}
+                  disabled={loading}
                   style={{
-                    background: 'transparent',
-                    border: '1px solid rgba(255, 255, 255, 0.15)',
-                    borderRadius: '12px',
-                    padding: '8px 16px',
-                    color: 'var(--c-content)',
-                    fontSize: '13px',
-                    cursor: 'pointer',
                     width: '100%',
-                    backdropFilter: 'blur(8px)',
-                  }}
-                >
-                  ✉️ Or sign in with Email & Password
-                </button>
-              ) : (
-                <form
-                  onSubmit={handleEmailAuth}
-                  style={{
+                    height: '48px',
+                    borderRadius: '16px',
+                    border: '1px solid rgba(255, 255, 255, 0.20)',
+                    background: '#ffffff',
+                    color: '#0f172a',
+                    fontSize: '15px',
+                    fontWeight: 600,
+                    cursor: 'pointer',
                     display: 'flex',
-                    flexDirection: 'column',
-                    gap: '10px',
-                    padding: '14px',
-                    borderRadius: '18px',
-                    background: 'rgba(255, 255, 255, 0.05)',
-                    border: '1px solid rgba(255, 255, 255, 0.1)',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: '12px',
+                    boxShadow: '0 8px 24px rgba(0, 0, 0, 0.35)',
+                    transition: 'transform 0.2s ease, opacity 0.2s ease',
+                  }}
+                  onMouseEnter={(e) => (e.currentTarget.style.transform = 'scale(1.02)')}
+                  onMouseLeave={(e) => (e.currentTarget.style.transform = 'scale(1)')}
+                >
+                  <svg width="20" height="20" viewBox="0 0 24 24">
+                    <path
+                      fill="#4285F4"
+                      d="M23.745 12.27c0-.7-.06-1.4-.19-2.07H12v4.51h6.6c-.29 1.52-1.14 2.8-2.4 3.65v3.03h3.88c2.28-2.09 3.665-5.17 3.665-9.12z"
+                    />
+                    <path
+                      fill="#34A853"
+                      d="M12 24c3.24 0 5.95-1.08 7.93-2.91l-3.88-3.03c-1.08.72-2.45 1.16-4.05 1.16-3.12 0-5.77-2.1-6.72-4.93H1.25v3.13C3.26 21.36 7.33 24 12 24z"
+                    />
+                    <path
+                      fill="#FBBC05"
+                      d="M5.28 14.29c-.25-.72-.38-1.49-.38-2.29s.13-1.57.38-2.29V6.58H1.25C.45 8.18 0 10.03 0 12s.45 3.82 1.25 5.42l4.03-3.13z"
+                    />
+                    <path
+                      fill="#EA4335"
+                      d="M12 4.75c1.77 0 3.35.61 4.6 1.8l3.42-3.42C17.95 1.19 15.24 0 12 0 7.33 0 3.26 2.64 1.25 6.58l4.03 3.13c.95-2.83 3.6-4.96 6.72-4.96z"
+                    />
+                  </svg>
+                  <span>{loading ? 'Connecting with Google...' : 'Continue with Google'}</span>
+                </button>
+              </div>
+            ) : (
+              <form
+                onSubmit={handleEmailAuth}
+                style={{
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: '12px',
+                  padding: '16px',
+                  borderRadius: '20px',
+                  background: 'rgba(255, 255, 255, 0.05)',
+                  border: '1px solid rgba(255, 255, 255, 0.1)',
+                  textAlign: 'left',
+                }}
+              >
+                <div style={{ display: 'flex', gap: '8px', marginBottom: '4px' }}>
+                  <button
+                    type="button"
+                    onClick={() => setIsSignUp(false)}
+                    style={{
+                      flex: 1,
+                      height: '32px',
+                      borderRadius: '8px',
+                      border: 0,
+                      background: !isSignUp ? 'rgba(59, 130, 246, 0.25)' : 'transparent',
+                      color: !isSignUp ? '#60a5fa' : 'var(--c-muted)',
+                      fontWeight: !isSignUp ? 600 : 400,
+                      fontSize: '12.5px',
+                      cursor: 'pointer',
+                    }}
+                  >
+                    Sign In
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setIsSignUp(true)}
+                    style={{
+                      flex: 1,
+                      height: '32px',
+                      borderRadius: '8px',
+                      border: 0,
+                      background: isSignUp ? 'rgba(59, 130, 246, 0.25)' : 'transparent',
+                      color: isSignUp ? '#60a5fa' : 'var(--c-muted)',
+                      fontWeight: isSignUp ? 600 : 400,
+                      fontSize: '12.5px',
+                      cursor: 'pointer',
+                    }}
+                  >
+                    Create Account
+                  </button>
+                </div>
+
+                <input
+                  type="email"
+                  placeholder="Email address"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  required
+                  autoCapitalize="none"
+                  style={{
+                    height: '42px',
+                    padding: '0 12px',
+                    borderRadius: '12px',
+                    background: 'rgba(0, 0, 0, 0.3)',
+                    border: '1px solid rgba(255, 255, 255, 0.15)',
+                    color: 'var(--c-content)',
+                    fontSize: '14px',
+                    outline: 'none',
+                  }}
+                />
+                <input
+                  type="password"
+                  placeholder="Password (min 6 characters)"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  required
+                  style={{
+                    height: '42px',
+                    padding: '0 12px',
+                    borderRadius: '12px',
+                    background: 'rgba(0, 0, 0, 0.3)',
+                    border: '1px solid rgba(255, 255, 255, 0.15)',
+                    color: 'var(--c-content)',
+                    fontSize: '14px',
+                    outline: 'none',
+                  }}
+                />
+
+                <button
+                  type="submit"
+                  disabled={loading}
+                  style={{
+                    width: '100%',
+                    height: '42px',
+                    borderRadius: '12px',
+                    background: '#3b82f6',
+                    color: '#fff',
+                    fontWeight: 600,
+                    border: 0,
+                    cursor: 'pointer',
+                    fontSize: '14px',
+                    marginTop: '4px',
+                    boxShadow: '0 4px 14px rgba(59, 130, 246, 0.35)',
                   }}
                 >
-                  <input
-                    type="email"
-                    placeholder="Email address"
-                    value={email}
-                    onChange={(e) => setEmail(e.target.value)}
-                    required
-                    style={{
-                      height: '40px',
-                      padding: '0 12px',
-                      borderRadius: '10px',
-                      background: 'rgba(0, 0, 0, 0.25)',
-                      border: '1px solid rgba(255, 255, 255, 0.15)',
-                      color: 'var(--c-content)',
-                      fontSize: '14px',
-                      outline: 'none',
-                    }}
-                  />
-                  <input
-                    type="password"
-                    placeholder="Password (min 6 chars)"
-                    value={password}
-                    onChange={(e) => setPassword(e.target.value)}
-                    required
-                    style={{
-                      height: '40px',
-                      padding: '0 12px',
-                      borderRadius: '10px',
-                      background: 'rgba(0, 0, 0, 0.25)',
-                      border: '1px solid rgba(255, 255, 255, 0.15)',
-                      color: 'var(--c-content)',
-                      fontSize: '14px',
-                      outline: 'none',
-                    }}
-                  />
-                  <div style={{ display: 'flex', gap: '8px' }}>
-                    <button
-                      type="submit"
-                      disabled={loading}
-                      style={{
-                        flex: 1,
-                        height: '38px',
-                        borderRadius: '10px',
-                        background: '#3b82f6',
-                        color: '#fff',
-                        fontWeight: 600,
-                        border: 0,
-                        cursor: 'pointer',
-                        fontSize: '13.5px',
-                      }}
-                    >
-                      {loading ? 'Please wait...' : isSignUp ? 'Sign Up' : 'Sign In'}
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setIsSignUp(!isSignUp)}
-                      style={{
-                        padding: '0 10px',
-                        height: '38px',
-                        borderRadius: '10px',
-                        background: 'rgba(255, 255, 255, 0.08)',
-                        color: 'var(--c-muted)',
-                        border: '1px solid rgba(255, 255, 255, 0.1)',
-                        cursor: 'pointer',
-                        fontSize: '12px',
-                      }}
-                    >
-                      {isSignUp ? 'Switch to Sign In' : 'Need an account?'}
-                    </button>
-                  </div>
-                </form>
-              )}
-            </div>
+                  {loading ? 'Please wait...' : isSignUp ? 'Create Account & Sync' : 'Sign In & Sync'}
+                </button>
+              </form>
+            )}
 
             {/* Continue as Guest option */}
             <button
