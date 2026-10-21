@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { User } from 'firebase/auth';
-import { signInWithGoogle, logOut } from '../../services/firebase';
+import { signInWithGoogle, signInWithEmail, signUpWithEmail, logOut } from '../../services/firebase';
 import { soundService } from '../../services/sound';
 import { hapticsService } from '../../services/haptics';
 
@@ -20,30 +20,77 @@ export const AuthModal: React.FC<AuthModalProps> = ({
   const [loading, setLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
+  // Email / Password sign-in option for environments with strict popup restrictions
+  const [showEmailForm, setShowEmailForm] = useState(false);
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [isSignUp, setIsSignUp] = useState(false);
+
   if (!isOpen) return null;
 
   const handleGoogleSignIn = async () => {
-    try {
-      setLoading(true);
-      setErrorMsg(null);
-      soundService.playTap();
-      hapticsService.medium();
+    // Fire sound & haptics asynchronously without awaiting to keep user gesture context intact
+    soundService.playTap();
+    hapticsService.medium().catch(() => {});
+    setLoading(true);
+    setErrorMsg(null);
 
+    try {
       await signInWithGoogle();
       soundService.playTaskComplete();
-      hapticsService.success();
+      hapticsService.success().catch(() => {});
       if (onSuccess) onSuccess();
       onClose();
     } catch (err: any) {
-      console.error('Google Sign-In Error:', err);
-      if (err.code === 'auth/popup-closed-by-user') {
-        setErrorMsg('Sign-in cancelled. Please try again.');
+      console.warn('Google Sign-In Error:', err);
+      if (err.message === 'Sign-in cancelled.') {
+        setErrorMsg('Sign-in cancelled.');
       } else if (err.code === 'auth/network-request-failed') {
         setErrorMsg('Network error. Check your connection.');
+      } else if (err.code === 'auth/popup-blocked') {
+        setErrorMsg('Popup was blocked by your browser. Please allow popups or sign in with Email below.');
+        setShowEmailForm(true);
       } else {
         setErrorMsg(err.message || 'Unable to sign in with Google.');
       }
-      hapticsService.error();
+      hapticsService.error().catch(() => {});
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleEmailAuth = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!email.trim() || !password.trim()) {
+      setErrorMsg('Please enter both email and password.');
+      return;
+    }
+    soundService.playTap();
+    setLoading(true);
+    setErrorMsg(null);
+
+    try {
+      if (isSignUp) {
+        await signUpWithEmail(email.trim(), password);
+      } else {
+        await signInWithEmail(email.trim(), password);
+      }
+      soundService.playTaskComplete();
+      hapticsService.success().catch(() => {});
+      if (onSuccess) onSuccess();
+      onClose();
+    } catch (err: any) {
+      console.error('Email Auth Error:', err);
+      if (err.code === 'auth/user-not-found' || err.code === 'auth/invalid-credential') {
+        setErrorMsg('Invalid email or password.');
+      } else if (err.code === 'auth/email-already-in-use') {
+        setErrorMsg('Email already in use. Please sign in instead.');
+      } else if (err.code === 'auth/weak-password') {
+        setErrorMsg('Password should be at least 6 characters.');
+      } else {
+        setErrorMsg(err.message || 'Authentication failed.');
+      }
+      hapticsService.error().catch(() => {});
     } finally {
       setLoading(false);
     }
@@ -53,7 +100,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
     try {
       setLoading(true);
       soundService.playTap();
-      hapticsService.light();
+      hapticsService.light().catch(() => {});
       await logOut();
       onClose();
     } catch (err: any) {
@@ -370,6 +417,115 @@ export const AuthModal: React.FC<AuthModalProps> = ({
               </svg>
               <span>{loading ? 'Connecting with Google...' : 'Continue with Google'}</span>
             </button>
+
+            {/* Email Authentication Fallback Option */}
+            <div style={{ marginTop: '16px' }}>
+              {!showEmailForm ? (
+                <button
+                  type="button"
+                  onClick={() => {
+                    soundService.playTap();
+                    setShowEmailForm(true);
+                  }}
+                  style={{
+                    background: 'transparent',
+                    border: '1px solid rgba(255, 255, 255, 0.15)',
+                    borderRadius: '12px',
+                    padding: '8px 16px',
+                    color: 'var(--c-content)',
+                    fontSize: '13px',
+                    cursor: 'pointer',
+                    width: '100%',
+                    backdropFilter: 'blur(8px)',
+                  }}
+                >
+                  ✉️ Or sign in with Email & Password
+                </button>
+              ) : (
+                <form
+                  onSubmit={handleEmailAuth}
+                  style={{
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: '10px',
+                    padding: '14px',
+                    borderRadius: '18px',
+                    background: 'rgba(255, 255, 255, 0.05)',
+                    border: '1px solid rgba(255, 255, 255, 0.1)',
+                  }}
+                >
+                  <input
+                    type="email"
+                    placeholder="Email address"
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                    required
+                    style={{
+                      height: '40px',
+                      padding: '0 12px',
+                      borderRadius: '10px',
+                      background: 'rgba(0, 0, 0, 0.25)',
+                      border: '1px solid rgba(255, 255, 255, 0.15)',
+                      color: 'var(--c-content)',
+                      fontSize: '14px',
+                      outline: 'none',
+                    }}
+                  />
+                  <input
+                    type="password"
+                    placeholder="Password (min 6 chars)"
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    required
+                    style={{
+                      height: '40px',
+                      padding: '0 12px',
+                      borderRadius: '10px',
+                      background: 'rgba(0, 0, 0, 0.25)',
+                      border: '1px solid rgba(255, 255, 255, 0.15)',
+                      color: 'var(--c-content)',
+                      fontSize: '14px',
+                      outline: 'none',
+                    }}
+                  />
+                  <div style={{ display: 'flex', gap: '8px' }}>
+                    <button
+                      type="submit"
+                      disabled={loading}
+                      style={{
+                        flex: 1,
+                        height: '38px',
+                        borderRadius: '10px',
+                        background: '#3b82f6',
+                        color: '#fff',
+                        fontWeight: 600,
+                        border: 0,
+                        cursor: 'pointer',
+                        fontSize: '13.5px',
+                      }}
+                    >
+                      {loading ? 'Please wait...' : isSignUp ? 'Sign Up' : 'Sign In'}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setIsSignUp(!isSignUp)}
+                      style={{
+                        padding: '0 10px',
+                        height: '38px',
+                        borderRadius: '10px',
+                        background: 'rgba(255, 255, 255, 0.08)',
+                        color: 'var(--c-muted)',
+                        border: '1px solid rgba(255, 255, 255, 0.1)',
+                        cursor: 'pointer',
+                        fontSize: '12px',
+                      }}
+                    >
+                      {isSignUp ? 'Switch to Sign In' : 'Need an account?'}
+                    </button>
+                  </div>
+                </form>
+              )}
+            </div>
 
             {/* Continue as Guest option */}
             <button

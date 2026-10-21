@@ -7,6 +7,8 @@ import {
   getRedirectResult,
   signOut,
   onAuthStateChanged,
+  createUserWithEmailAndPassword,
+  signInWithEmailAndPassword,
   User,
 } from 'firebase/auth';
 import {
@@ -30,10 +32,24 @@ import {
 import { getAnalytics, isSupported } from 'firebase/analytics';
 import { BlockItem, BlockFile } from '../types';
 
+// Dynamically determine authDomain:
+// When hosted on Vercel, use current host (e.g. life-of-blocks.vercel.app)
+// which proxies /__/auth/* to Firebase, completely eliminating the cross-origin
+// storage partitioning "missing initial state" error!
+export const getAuthDomain = (): string => {
+  if (typeof window !== 'undefined') {
+    const host = window.location.host;
+    if (host.includes('vercel.app')) {
+      return host;
+    }
+  }
+  return 'life-of-blocks.firebaseapp.com';
+};
+
 // Web App Firebase configuration provided by the user
 export const firebaseConfig = {
   apiKey: 'AIzaSyCDD1dWKCybEZH9pQJuFpqxILgopEFFMpM',
-  authDomain: 'life-of-blocks.firebaseapp.com',
+  authDomain: getAuthDomain(),
   projectId: 'life-of-blocks',
   storageBucket: 'life-of-blocks.firebasestorage.app',
   messagingSenderId: '853169901922',
@@ -64,28 +80,51 @@ googleProvider.setCustomParameters({
 });
 
 /**
- * Sign in with Google using popup, with automatic redirect fallback for strict mobile WebViews
+ * Sign in with Google using popup, with clean cancellation handling and redirect fallback
  */
 export async function signInWithGoogle(): Promise<User> {
   try {
     const result = await signInWithPopup(auth, googleProvider);
     return result.user;
   } catch (error: any) {
-    // If popup is blocked by browser/webview, attempt redirect flow
+    console.warn('Google Sign-In Popup Error:', error);
+
+    // If popup was closed intentionally by user, DO NOT force a redirect
     if (
-      error.code === 'auth/popup-blocked' ||
-      error.code === 'auth/cancelled-popup-request' ||
-      error.code === 'auth/popup-closed-by-user'
+      error.code === 'auth/popup-closed-by-user' ||
+      error.code === 'auth/cancelled-popup-request'
     ) {
-      console.warn('Popup blocked, attempting redirect sign-in...', error);
+      throw new Error('Sign-in cancelled.');
+    }
+
+    // Only if popup was strictly blocked by browser popup policy, fallback to redirect
+    if (error.code === 'auth/popup-blocked') {
       try {
         await signInWithRedirect(auth, googleProvider);
+        return new Promise<User>(() => {});
       } catch (redirectError) {
         throw redirectError;
       }
     }
+
     throw error;
   }
+}
+
+/**
+ * Sign in with Email & Password
+ */
+export async function signInWithEmail(email: string, pass: string): Promise<User> {
+  const result = await signInWithEmailAndPassword(auth, email, pass);
+  return result.user;
+}
+
+/**
+ * Sign up with Email & Password
+ */
+export async function signUpWithEmail(email: string, pass: string): Promise<User> {
+  const result = await createUserWithEmailAndPassword(auth, email, pass);
+  return result.user;
 }
 
 /**
