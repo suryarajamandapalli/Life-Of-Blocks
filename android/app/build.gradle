@@ -4,7 +4,7 @@ android {
     namespace "com.lifeofblocks.app"
     compileSdk rootProject.ext.compileSdkVersion
     defaultConfig {
-        applicationId "com.lifeofblocks.app"
+        applicationId "Life.Of.Blocks"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
         versionCode 1

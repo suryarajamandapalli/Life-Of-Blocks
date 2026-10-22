@@ -1,5 +1,5 @@
 {
-  "appId": "com.lifeofblocks.app",
+  "appId": "Life.Of.Blocks",
   "appName": "Life of Blocks",
   "webDir": "dist",
   "bundledWebRuntime": false,
