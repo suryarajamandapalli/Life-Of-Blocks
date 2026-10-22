@@ -21,14 +21,23 @@ export default function BlockView({
   onDownloadFile,
   onDeleteFile
 }) {
-  // Localized Adaptive Contrast Refs
-  const headerRef = useRef(null);
-  const tasksRef = useRef(null);
-  const filesRef = useRef(null);
+  // Independent Adaptive Contrast Refs for every discrete element
+  const backBtnRef = useRef(null);
+  const titleRef = useRef(null);
+  const tasksHeaderRef = useRef(null);
+  const addTaskRef = useRef(null);
+  const filesHeaderRef = useRef(null);
+  const emptyFilesRef = useRef(null);
+  const uploadBtnRef = useRef(null);
 
-  const headerContrast = useAdaptiveContrast(headerRef, wallpaper);
-  const tasksContrast = useAdaptiveContrast(tasksRef, wallpaper);
-  const filesContrast = useAdaptiveContrast(filesRef, wallpaper);
+  // Discrete element contrast states (independently evaluated from exact pixels behind each element)
+  const backContrast = useAdaptiveContrast(backBtnRef, wallpaper);
+  const titleContrast = useAdaptiveContrast(titleRef, wallpaper);
+  const tasksHeaderContrast = useAdaptiveContrast(tasksHeaderRef, wallpaper);
+  const addTaskContrast = useAdaptiveContrast(addTaskRef, wallpaper);
+  const filesHeaderContrast = useAdaptiveContrast(filesHeaderRef, wallpaper);
+  const emptyFilesContrast = useAdaptiveContrast(emptyFilesRef, wallpaper);
+  const uploadBtnContrast = useAdaptiveContrast(uploadBtnRef, wallpaper);
 
   const [isAddingTodo, setIsAddingTodo] = useState(false);
   const [newTodoTitle, setNewTodoTitle] = useState('');
@@ -271,17 +280,18 @@ export default function BlockView({
     <>
       {/* ========================================================
           01 — FLOATING TOP-LEFT BACK BUTTON
-          Matches top-right controls alignment and liquid-glass style
+          Independently samples pixels behind the button
           ======================================================== */}
       <div className="fixed top-3.5 left-4 sm:top-5 sm:left-6 z-20 flex items-center">
         <button
+          ref={backBtnRef}
           onClick={onBack}
           title="Back to Blocks (Esc)"
           aria-label="Back to Blocks"
-          className={`w-9 h-9 sm:w-10 sm:h-10 rounded-full flex items-center justify-center cursor-pointer transition-all duration-200 active:scale-95 shadow-lg backdrop-blur-xl border ${
-            headerContrast.isLight
-              ? 'bg-white/65 hover:bg-white/85 border-black/15 text-zinc-900 hover:text-black'
-              : 'bg-black/40 hover:bg-black/60 border-white/20 text-white/85 hover:text-white'
+          className={`w-9 h-9 sm:w-10 sm:h-10 rounded-full flex items-center justify-center cursor-pointer transition-colors duration-250 ease-out active:scale-95 shadow-md backdrop-blur-md border ${
+            backContrast.isLight
+              ? 'bg-white/60 hover:bg-white/80 border-black/15 text-[#111111]'
+              : 'bg-black/35 hover:bg-black/55 border-white/20 text-[#FFFFFF]'
           }`}
         >
           <ArrowLeft className="w-4 h-4 stroke-[2.2]" />
@@ -290,18 +300,19 @@ export default function BlockView({
 
       {/* ========================================================
           02 — MAIN INNER BLOCK CONTAINER
-          Distraction-free, minimal, zero bulky boxes
+          Distraction-free, zero grey/translucent background rectangles
           ======================================================== */}
       <div 
         className="w-full max-w-[760px] mx-auto px-4 sm:px-6 pt-20 sm:pt-24 pb-28 animate-page-in select-none"
       >
-        {/* Block Header (Title only, no redundant metadata clutter) */}
-        <div ref={headerRef} className="mb-8 sm:mb-10">
+        {/* Block Header (Title independently samples pixels behind itself) */}
+        <div className="mb-8 sm:mb-10">
           <h1 
-            className={`text-2xl sm:text-3xl md:text-4xl font-semibold tracking-tight leading-tight break-words select-text transition-colors duration-200 ${
-              headerContrast.isLight
-                ? 'text-zinc-950 drop-shadow-[0_1px_6px_rgba(255,255,255,0.85)]'
-                : 'text-white drop-shadow-[0_2px_12px_rgba(0,0,0,0.85)]'
+            ref={titleRef}
+            className={`text-2xl sm:text-3xl md:text-4xl font-semibold tracking-tight leading-tight break-words select-text transition-colors duration-250 ease-out ${
+              titleContrast.isLight
+                ? `text-[#111111] ${titleContrast.textShadow}`
+                : `text-[#FFFFFF] ${titleContrast.textShadow}`
             }`}
           >
             {block.name}
@@ -310,28 +321,28 @@ export default function BlockView({
 
         {/* ========================================================
             03 — TASKS SECTION
-            Pure floating rows: ○ Task name, zero lines cutting wallpaper
+            Pure floating text: printed directly onto the wallpaper
             ======================================================== */}
-        <div ref={tasksRef} className="mb-10 sm:mb-12">
-          {/* Section Heading & Counter */}
-          <div className="flex items-center justify-between mb-2 px-1">
+        <div className="mb-10 sm:mb-12">
+          {/* Section Heading & Counter (Independently samples pixels behind itself) */}
+          <div ref={tasksHeaderRef} className="flex items-center justify-between mb-2 px-1">
             <span 
-              className={`text-[11.5px] font-semibold tracking-[0.18em] uppercase ${
-                tasksContrast.isLight 
-                  ? 'text-zinc-800/80 drop-shadow-[0_1px_2px_rgba(255,255,255,0.7)]' 
-                  : 'text-white/70 drop-shadow-[0_1px_3px_rgba(0,0,0,0.85)]'
+              className={`text-[11.5px] font-semibold tracking-[0.18em] uppercase transition-colors duration-250 ease-out ${
+                tasksHeaderContrast.isLight 
+                  ? `text-[#111111]/85 ${tasksHeaderContrast.textShadow}` 
+                  : `text-[#FFFFFF]/80 ${tasksHeaderContrast.textShadow}`
               }`}
             >
               TASKS
             </span>
             {todos.length > 0 && (
               <span 
-                className={`text-xs font-mono font-medium tracking-wider ${
+                className={`text-xs font-mono font-medium tracking-wider transition-colors duration-250 ${
                   completedCount === todos.length && todos.length > 0
                     ? 'text-emerald-400 font-semibold'
                     : completedCount > 0
                       ? 'text-amber-300 font-medium'
-                      : 'text-rose-400 font-medium'
+                      : (tasksHeaderContrast.isLight ? 'text-rose-600' : 'text-rose-400')
                 }`}
               >
                 {completedCount} / {todos.length}
@@ -339,10 +350,10 @@ export default function BlockView({
             )}
           </div>
 
-          {/* Color-coded task progress bar (Red if 0, Yellow if partial, Green if all) */}
+          {/* Color-coded task progress bar */}
           {todos.length > 0 && (
             <div className={`w-full h-1.5 rounded-full overflow-hidden mb-3.5 ${
-              tasksContrast.isLight ? 'bg-black/10' : 'bg-white/10'
+              tasksHeaderContrast.isLight ? 'bg-black/10' : 'bg-white/10'
             }`}>
               <div 
                 className={`h-full rounded-full transition-all duration-300 ${
@@ -365,25 +376,25 @@ export default function BlockView({
 
           {/* Loading Tasks */}
           {loadingTodos && (
-            <div className={`py-3 text-xs tracking-wider px-1 ${tasksContrast.isLight ? 'text-zinc-700/60' : 'text-white/40'}`}>
+            <div className={`py-3 text-xs tracking-wider px-1 ${tasksHeaderContrast.isLight ? 'text-[#111111]/60' : 'text-white/40'}`}>
               Loading tasks...
             </div>
           )}
 
-          {/* Floating Task Rows: Distraction-free */}
+          {/* Floating Task Rows: Each TodoItem independently samples pixels behind itself */}
           {!loadingTodos && todos.length > 0 && (
-            <div className="flex flex-col gap-1 mb-2">
+            <div className="flex flex-col gap-0.5 sm:gap-1 mb-2">
               {todos.map((todo) => (
                 <TodoItem
                   key={todo.id}
                   todo={todo}
+                  wallpaper={wallpaper}
                   isSelected={todo.id === selectedTodoId}
                   deleteProgress={todo.id === selectedTodoId ? deleteProgress : 0}
                   onSelect={(t) => setSelectedTodoId(t.id)}
                   onToggle={(t) => onToggleTodo(block.id, t.id, !t.completed)}
                   onUpdate={(todoId, newTitle) => onUpdateTodo(block.id, todoId, { title: newTitle })}
                   onDelete={() => handleDeleteTask(todo)}
-                  isLightMode={tasksContrast.isLight}
                 />
               ))}
             </div>
@@ -392,7 +403,9 @@ export default function BlockView({
           {/* Empty State */}
           {!loadingTodos && todos.length === 0 && !isAddingTodo && (
             <div className="py-2 mb-2 px-1">
-              <p className={`text-[13.5px] font-normal ${tasksContrast.isLight ? 'text-zinc-700/70' : 'text-white/45'}`}>
+              <p className={`text-[13.5px] font-normal transition-colors duration-250 ${
+                tasksHeaderContrast.isLight ? `text-[#111111]/70 ${tasksHeaderContrast.textShadow}` : `text-[#FFFFFF]/60 ${tasksHeaderContrast.textShadow}`
+              }`}>
                 No tasks yet
               </p>
             </div>
@@ -403,13 +416,13 @@ export default function BlockView({
             <form 
               onSubmit={handleCreateTodo} 
               className={`flex items-center gap-3 px-3.5 py-2.5 rounded-xl transition-all duration-150 backdrop-blur-md border ${
-                tasksContrast.isLight
-                  ? 'bg-white/55 border-black/15 shadow-sm'
+                addTaskContrast.isLight
+                  ? 'bg-white/60 border-black/15 shadow-sm'
                   : 'bg-black/40 border-white/20 shadow-lg'
               }`}
             >
               <div className={`w-[19px] h-[19px] rounded-full border border-dashed flex-shrink-0 ${
-                tasksContrast.isLight ? 'border-black/40' : 'border-white/40'
+                addTaskContrast.isLight ? 'border-black/40' : 'border-white/40'
               }`} />
               <input
                 ref={todoInputRef}
@@ -419,8 +432,8 @@ export default function BlockView({
                 onKeyDown={handleTodoInputKeyDown}
                 placeholder="What needs to be done?"
                 className={`flex-1 bg-transparent text-[15px] focus:outline-none ${
-                  tasksContrast.isLight
-                    ? 'text-zinc-950 placeholder-zinc-500'
+                  addTaskContrast.isLight
+                    ? 'text-[#111111] placeholder-zinc-500'
                     : 'text-white placeholder-white/40'
                 }`}
                 maxLength={140}
@@ -433,7 +446,7 @@ export default function BlockView({
                     setIsAddingTodo(false);
                   }}
                   className={`px-2.5 py-1 text-xs rounded-md transition-colors cursor-pointer ${
-                    tasksContrast.isLight ? 'text-zinc-700 hover:text-black hover:bg-black/5' : 'text-white/60 hover:text-white hover:bg-white/10'
+                    addTaskContrast.isLight ? 'text-zinc-700 hover:text-black hover:bg-black/5' : 'text-white/60 hover:text-white hover:bg-white/10'
                   }`}
                 >
                   Cancel
@@ -442,8 +455,8 @@ export default function BlockView({
                   type="submit"
                   disabled={!newTodoTitle.trim()}
                   className={`px-3 py-1 rounded-md text-xs font-semibold disabled:opacity-30 transition-all cursor-pointer shadow-sm active:scale-95 ${
-                    tasksContrast.isLight
-                      ? 'bg-zinc-950 text-white hover:bg-black'
+                    addTaskContrast.isLight
+                      ? 'bg-[#111111] text-white hover:bg-black'
                       : 'bg-white text-black hover:bg-white/90'
                   }`}
                 >
@@ -453,25 +466,26 @@ export default function BlockView({
             </form>
           ) : (
             <button
+              ref={addTaskRef}
               onClick={() => setIsAddingTodo(true)}
-              className={`inline-flex items-center gap-2 text-[13.5px] transition-all hover:translate-x-0.5 cursor-pointer select-none group py-2 px-1 ${
-                tasksContrast.isLight
-                  ? 'text-zinc-800/80 hover:text-black'
-                  : 'text-white/70 hover:text-white'
+              className={`inline-flex items-center gap-2 text-[13.5px] transition-colors duration-250 hover:translate-x-0.5 cursor-pointer select-none group py-2 px-1 ${
+                addTaskContrast.isLight
+                  ? `text-[#111111]/80 hover:text-[#111111] ${addTaskContrast.textShadow}`
+                  : `text-[#FFFFFF]/80 hover:text-[#FFFFFF] ${addTaskContrast.textShadow}`
               }`}
             >
               <span className={`w-5 h-5 rounded-full flex items-center justify-center text-xs transition-colors border ${
-                tasksContrast.isLight 
-                  ? 'border-black/25 text-zinc-800 group-hover:border-black group-hover:bg-black/5' 
-                  : 'border-white/30 text-white/70 group-hover:border-white group-hover:bg-white/10'
+                addTaskContrast.isLight 
+                  ? 'border-black/35 text-[#111111] group-hover:border-black group-hover:bg-black/5' 
+                  : 'border-white/40 text-[#FFFFFF] group-hover:border-white group-hover:bg-white/10'
               }`}>
                 ＋
               </span>
-              <span className="font-normal drop-shadow-sm">
+              <span className="font-normal">
                 {todos.length === 0 ? 'Add your first task' : 'Add task'}
               </span>
               <kbd className={`hidden sm:inline-block ml-1 px-1.5 py-0.2 rounded text-[10px] font-mono ${
-                tasksContrast.isLight ? 'bg-black/[0.08] text-zinc-800' : 'bg-white/[0.10] text-white/50'
+                addTaskContrast.isLight ? 'bg-black/[0.08] text-[#111111]' : 'bg-white/[0.12] text-[#FFFFFF]/70'
               }`}>
                 N
               </kbd>
@@ -483,22 +497,22 @@ export default function BlockView({
             04 — FILES SECTION
             Visual media tiles, zero lines cutting wallpaper
             ======================================================== */}
-        <div ref={filesRef}>
-          {/* Section Heading & Counter */}
-          <div className="flex items-center justify-between mb-3 px-1">
+        <div>
+          {/* Section Heading & Counter (Independently samples pixels behind itself) */}
+          <div ref={filesHeaderRef} className="flex items-center justify-between mb-3 px-1 mt-10 sm:mt-12">
             <span 
-              className={`text-[11.5px] font-semibold tracking-[0.18em] uppercase ${
-                filesContrast.isLight 
-                  ? 'text-zinc-800/80 drop-shadow-[0_1px_2px_rgba(255,255,255,0.7)]' 
-                  : 'text-white/70 drop-shadow-[0_1px_3px_rgba(0,0,0,0.85)]'
+              className={`text-[11.5px] font-semibold tracking-[0.18em] uppercase transition-colors duration-250 ease-out ${
+                filesHeaderContrast.isLight 
+                  ? `text-[#111111]/85 ${filesHeaderContrast.textShadow}` 
+                  : `text-[#FFFFFF]/80 ${filesHeaderContrast.textShadow}`
               }`}
             >
               FILES
             </span>
             {files.length > 0 && (
               <span 
-                className={`text-xs font-mono font-medium tracking-wider ${
-                  filesContrast.isLight ? 'text-zinc-700/70' : 'text-white/50'
+                className={`text-xs font-mono font-medium tracking-wider transition-colors duration-250 ${
+                  filesHeaderContrast.isLight ? 'text-[#111111]/70' : 'text-[#FFFFFF]/60'
                 }`}
               >
                 {files.length}
@@ -508,7 +522,7 @@ export default function BlockView({
 
           {/* Loading Files */}
           {loadingFiles && (
-            <div className={`py-3 text-xs tracking-wider px-1 ${filesContrast.isLight ? 'text-zinc-700/60' : 'text-white/40'}`}>
+            <div className={`py-3 text-xs tracking-wider px-1 ${filesHeaderContrast.isLight ? 'text-[#111111]/60' : 'text-white/40'}`}>
               Loading files...
             </div>
           )}
@@ -516,22 +530,22 @@ export default function BlockView({
           {/* Upload Progress Bar */}
           {uploadProgress !== null && (
             <div className={`mb-3 p-3.5 rounded-xl border backdrop-blur-md ${
-              filesContrast.isLight 
+              filesHeaderContrast.isLight 
                 ? 'bg-white/60 border-black/10 shadow-sm' 
                 : 'bg-black/45 border-white/15'
             }`}>
               <div className={`flex items-center justify-between text-xs mb-2 ${
-                filesContrast.isLight ? 'text-zinc-900' : 'text-white/85'
+                filesHeaderContrast.isLight ? 'text-[#111111]' : 'text-white/85'
               }`}>
                 <span className="truncate max-w-[260px]">Uploading {uploadingFileName}...</span>
-                <span className={`font-mono ${filesContrast.isLight ? 'text-zinc-700' : 'text-white/55'}`}>
+                <span className={`font-mono ${filesHeaderContrast.isLight ? 'text-zinc-700' : 'text-white/55'}`}>
                   {uploadProgress}%
                 </span>
               </div>
-              <div className={`w-full h-1 rounded-full overflow-hidden ${filesContrast.isLight ? 'bg-black/10' : 'bg-white/15'}`}>
+              <div className={`w-full h-1 rounded-full overflow-hidden ${filesHeaderContrast.isLight ? 'bg-black/10' : 'bg-white/15'}`}>
                 <div
                   className={`h-full transition-all duration-150 ease-out rounded-full ${
-                    filesContrast.isLight ? 'bg-zinc-950' : 'bg-white'
+                    filesHeaderContrast.isLight ? 'bg-zinc-950' : 'bg-white'
                   }`}
                   style={{ width: `${uploadProgress}%` }}
                 />
@@ -549,7 +563,7 @@ export default function BlockView({
                   onOpenViewer={(f) => setViewingFile(f)}
                   onDownload={onDownloadFile}
                   onRequestDelete={(f) => setDeletingFile(f)}
-                  isLightMode={filesContrast.isLight}
+                  isLightMode={filesHeaderContrast.isLight}
                 />
               ))}
             </div>
@@ -557,8 +571,10 @@ export default function BlockView({
 
           {/* Empty State */}
           {!loadingFiles && files.length === 0 && uploadProgress === null && (
-            <div className="py-2 mb-2 px-1">
-              <p className={`text-[13.5px] font-normal ${filesContrast.isLight ? 'text-zinc-700/70' : 'text-white/45'}`}>
+            <div ref={emptyFilesRef} className="py-2 mb-2 px-1">
+              <p className={`text-[13.5px] font-normal transition-colors duration-250 ${
+                emptyFilesContrast.isLight ? `text-[#111111]/70 ${emptyFilesContrast.textShadow}` : `text-[#FFFFFF]/65 ${emptyFilesContrast.textShadow}`
+              }`}>
                 No files yet
               </p>
             </div>
@@ -574,30 +590,31 @@ export default function BlockView({
 
           {/* Upload File Trigger */}
           <button
+            ref={uploadBtnRef}
             onClick={handleTriggerUpload}
             disabled={uploadProgress !== null}
-            className={`inline-flex items-center gap-2 text-[13.5px] disabled:opacity-30 transition-all hover:translate-x-0.5 cursor-pointer select-none group py-2 px-1 mt-1 ${
-              filesContrast.isLight
-                ? 'text-zinc-800/80 hover:text-black'
-                : 'text-white/70 hover:text-white'
+            className={`inline-flex items-center gap-2 text-[13.5px] disabled:opacity-30 transition-colors duration-250 hover:translate-x-0.5 cursor-pointer select-none group py-2 px-1 mt-1 ${
+              uploadBtnContrast.isLight
+                ? `text-[#111111]/80 hover:text-[#111111] ${uploadBtnContrast.textShadow}`
+                : `text-[#FFFFFF]/80 hover:text-[#FFFFFF] ${uploadBtnContrast.textShadow}`
             }`}
           >
             {uploadProgress !== null ? (
-              <Loader2 className={`w-4 h-4 animate-spin ${filesContrast.isLight ? 'text-zinc-800' : 'text-white/70'}`} />
+              <Loader2 className={`w-4 h-4 animate-spin ${uploadBtnContrast.isLight ? 'text-zinc-800' : 'text-white/70'}`} />
             ) : (
               <span className={`w-5 h-5 rounded-full flex items-center justify-center text-xs transition-colors border ${
-                filesContrast.isLight 
-                  ? 'border-black/25 text-zinc-800 group-hover:border-black group-hover:bg-black/5' 
-                  : 'border-white/30 text-white/70 group-hover:border-white group-hover:bg-white/10'
+                uploadBtnContrast.isLight 
+                  ? 'border-black/35 text-[#111111] group-hover:border-black group-hover:bg-black/5' 
+                  : 'border-white/40 text-[#FFFFFF] group-hover:border-white group-hover:bg-white/10'
               }`}>
                 ＋
               </span>
             )}
-            <span className="font-normal drop-shadow-sm">
+            <span className="font-normal">
               {files.length === 0 ? 'Upload your first file' : 'Upload file'}
             </span>
             <kbd className={`hidden sm:inline-block ml-1 px-1.5 py-0.2 rounded text-[10px] font-mono ${
-              filesContrast.isLight ? 'bg-black/[0.08] text-zinc-800' : 'bg-white/[0.10] text-white/50'
+              uploadBtnContrast.isLight ? 'bg-black/[0.08] text-[#111111]' : 'bg-white/[0.12] text-[#FFFFFF]/70'
             }`}>
               O
             </kbd>
@@ -607,7 +624,6 @@ export default function BlockView({
 
       {/* ========================================================
           05 — NON-INTRUSIVE BOTTOM FLOATING TOASTS
-          Zero screen-dimming black shrouds!
           ======================================================== */}
 
       {/* Undo Task Deletion Toast */}
@@ -623,7 +639,7 @@ export default function BlockView({
         </div>
       )}
 
-      {/* Non-intrusive File Deletion Confirmation Bar (Wallpaper remains 100% visible) */}
+      {/* Non-intrusive File Deletion Confirmation Bar */}
       {deletingFile && (
         <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 flex items-center gap-3 px-4 py-2.5 rounded-2xl bg-black/85 border border-white/20 text-white shadow-2xl backdrop-blur-xl animate-modal-in max-w-[90vw]">
           <span className="text-xs sm:text-sm font-normal truncate max-w-[200px]">

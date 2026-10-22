@@ -15,19 +15,20 @@ export default function CircularCheckbox({ checked, onChange, disabled, isLightM
       aria-checked={checked}
       disabled={disabled}
       onClick={handleClick}
-      className="relative flex items-center justify-center w-[19px] h-[19px] rounded-full transition-all duration-150 focus:outline-none flex-shrink-0 group cursor-pointer active:scale-90"
+      className="relative flex items-center justify-center w-[19px] h-[19px] rounded-full focus:outline-none flex-shrink-0 group cursor-pointer active:scale-90"
       style={{
         background: checked 
-          ? (isLightMode ? 'rgba(15, 23, 42, 0.95)' : 'rgba(255, 255, 255, 0.95)')
+          ? (isLightMode ? '#111111' : '#FFFFFF')
           : (isLightMode ? 'rgba(0, 0, 0, 0.08)' : 'rgba(0, 0, 0, 0.35)'),
         border: checked 
-          ? (isLightMode ? '1.5px solid rgba(15, 23, 42, 0.95)' : '1.5px solid rgba(255, 255, 255, 0.95)')
-          : (isLightMode ? '1.5px solid rgba(0, 0, 0, 0.60)' : '1.5px solid rgba(255, 255, 255, 0.70)'),
+          ? (isLightMode ? '1.5px solid #111111' : '1.5px solid #FFFFFF')
+          : (isLightMode ? '1.5px solid rgba(17, 17, 17, 0.65)' : '1.5px solid rgba(255, 255, 255, 0.75)'),
         boxShadow: checked
           ? (isLightMode ? '0 1px 3px rgba(0,0,0,0.2)' : '0 1px 6px rgba(255,255,255,0.25)')
-          : '0 1px 4px rgba(0,0,0,0.4)',
-        backdropFilter: 'blur(6px)',
-        WebkitBackdropFilter: 'blur(6px)'
+          : (isLightMode ? '0 1px 2px rgba(255,255,255,0.4)' : '0 1px 4px rgba(0,0,0,0.5)'),
+        backdropFilter: 'blur(4px)',
+        WebkitBackdropFilter: 'blur(4px)',
+        transition: 'border-color 250ms ease, background-color 250ms ease, box-shadow 250ms ease'
       }}
     >
       {/* Checkmark icon */}

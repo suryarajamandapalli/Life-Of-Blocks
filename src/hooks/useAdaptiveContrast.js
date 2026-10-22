@@ -3,8 +3,11 @@ import { wallpaperSampler } from '../services/adaptiveContrast';
 
 export function useAdaptiveContrast(elementRef, wallpaperProp) {
   const wallpaperUrl = typeof wallpaperProp === 'string' ? wallpaperProp : wallpaperProp?.url;
-  const [isLight, setIsLight] = useState(false);
-  const [luminance, setLuminance] = useState(40);
+  const [contrastState, setContrastState] = useState({
+    isLight: false,
+    luminance: 40,
+    isHighVariance: false
+  });
 
   useEffect(() => {
     if (wallpaperUrl) {
@@ -17,14 +20,13 @@ export function useAdaptiveContrast(elementRef, wallpaperProp) {
       if (!elementRef.current) return;
       const rect = elementRef.current.getBoundingClientRect();
       const res = wallpaperSampler.getLuminanceAtRect(rect);
-      setIsLight(res.isLight);
-      setLuminance(res.luminance);
+      setContrastState(res);
     };
 
-    // Immediate check + deferred to ensure paint completion
+    // Immediate check + deferred checks after layout paint
     updateContrast();
-    const timer = setTimeout(updateContrast, 80);
-    const timer2 = setTimeout(updateContrast, 300);
+    const timer1 = setTimeout(updateContrast, 50);
+    const timer2 = setTimeout(updateContrast, 200);
 
     const unsub = wallpaperSampler.subscribe(updateContrast);
     window.addEventListener('resize', updateContrast, { passive: true });
@@ -37,7 +39,7 @@ export function useAdaptiveContrast(elementRef, wallpaperProp) {
     }
 
     return () => {
-      clearTimeout(timer);
+      clearTimeout(timer1);
       clearTimeout(timer2);
       unsub();
       window.removeEventListener('resize', updateContrast);
@@ -46,22 +48,26 @@ export function useAdaptiveContrast(elementRef, wallpaperProp) {
     };
   }, [elementRef, wallpaperUrl]);
 
+  const isLight = contrastState.isLight;
+  const isHighVariance = contrastState.isHighVariance;
+
   return {
     isLight,
-    luminance,
-    // Contrast-aware styling tokens
-    textColor: isLight ? 'text-zinc-950 font-medium' : 'text-white',
-    textMuted: isLight ? 'text-zinc-800/80 font-normal' : 'text-white/60',
-    textSubtle: isLight ? 'text-zinc-700/65' : 'text-white/40',
+    luminance: contrastState.luminance,
+    isHighVariance,
+    // Contrast-aware direct styling tokens (Strictly white #FFFFFF or dark #111111)
+    textColor: isLight ? 'text-[#111111]' : 'text-[#FFFFFF]',
+    textMuted: isLight ? 'text-[#111111]/75' : 'text-[#FFFFFF]/75',
+    textSubtle: isLight ? 'text-[#111111]/55' : 'text-[#FFFFFF]/50',
     textShadow: isLight
-      ? 'drop-shadow-[0_1px_4px_rgba(255,255,255,0.85)]'
-      : 'drop-shadow-[0_1px_6px_rgba(0,0,0,0.85)]',
-    separatorBg: isLight ? 'bg-black/[0.14]' : 'bg-white/[0.08]',
-    containerBg: isLight 
-      ? 'bg-white/45 backdrop-blur-xl border border-black/10 shadow-lg' 
-      : 'smoked-container',
-    divideColor: isLight ? 'divide-black/[0.07]' : 'divide-white/[0.06]',
-    rowHoverBg: isLight ? 'hover:bg-black/[0.04]' : 'hover:bg-white/[0.03]',
-    rowSelectedBg: isLight ? 'bg-black/[0.06]' : 'bg-white/[0.06]'
+      ? (isHighVariance 
+          ? 'drop-shadow-[0_1px_2px_rgba(255,255,255,0.95)] drop-shadow-[0_0_1px_rgba(255,255,255,0.7)]' 
+          : 'drop-shadow-[0_1px_2px_rgba(255,255,255,0.75)]')
+      : (isHighVariance 
+          ? 'drop-shadow-[0_1px_3px_rgba(0,0,0,0.95)] drop-shadow-[0_0_1px_rgba(0,0,0,0.7)]' 
+          : 'drop-shadow-[0_1px_3px_rgba(0,0,0,0.85)]'),
+    transitionClass: 'transition-colors duration-250 ease-out',
+    checkboxBorder: isLight ? 'rgba(17, 17, 17, 0.75)' : 'rgba(255, 255, 255, 0.85)',
+    checkboxBg: isLight ? 'rgba(17, 17, 17, 0.08)' : 'rgba(0, 0, 0, 0.35)'
   };
 }

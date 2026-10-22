@@ -1,6 +1,6 @@
 // Adaptive Wallpaper Contrast Service for LIFE OF BLOCKS
-// Dynamically samples the wallpaper pixels behind any specific UI element
-// Automatically determines whether text should be dark/black or white/light.
+// Dynamically samples the exact wallpaper pixels behind any specific UI element.
+// Each element independently adapts to either white (#FFFFFF) or black (#111111).
 
 class WallpaperContrastSampler {
   constructor() {
@@ -9,40 +9,103 @@ class WallpaperContrastSampler {
     this.image = null;
     this.isReady = false;
     this.currentUrl = null;
+    this.cache = new Map(); // url -> { canvas, ctx, width, height }
     this.listeners = new Set();
   }
 
-  // Load wallpaper into memory canvas
+  // Load wallpaper into memory canvas with blob-fallback for CORS resilience
   loadWallpaper(url) {
-    if (!url || url === this.currentUrl) return;
+    if (!url) return;
+    if (url === this.currentUrl && this.isReady) return;
+
     this.currentUrl = url;
+
+    // Check cache first for instant retrieval
+    if (this.cache.has(url)) {
+      const cached = this.cache.get(url);
+      this.canvas = cached.canvas;
+      this.ctx = cached.ctx;
+      this.isReady = true;
+      this.notify();
+      return;
+    }
+
     this.isReady = false;
 
     const img = new Image();
     img.crossOrigin = 'anonymous';
-    img.src = url;
 
     img.onload = () => {
-      // Use efficient sampling resolution (e.g. 640x360 maintains fidelity while fast)
-      this.canvas.width = 640;
-      this.canvas.height = Math.round(640 * (img.naturalHeight / img.naturalWidth)) || 360;
-      this.ctx.drawImage(img, 0, 0, this.canvas.width, this.canvas.height);
-      this.image = img;
-      this.isReady = true;
-      this.notify();
+      try {
+        const c = document.createElement('canvas');
+        const cx = c.getContext('2d', { willReadFrequently: true });
+        c.width = 640;
+        c.height = Math.round(640 * (img.naturalHeight / (img.naturalWidth || 1))) || 360;
+        cx.drawImage(img, 0, 0, c.width, c.height);
+
+        // Test reading 1 pixel to verify canvas isn't tainted by CORS
+        cx.getImageData(0, 0, 1, 1);
+
+        this.canvas = c;
+        this.ctx = cx;
+        this.image = img;
+        this.isReady = true;
+        this.cache.set(url, { canvas: c, ctx: cx, width: c.width, height: c.height });
+        this.notify();
+      } catch (taintErr) {
+        // Tainted canvas fallback: fetch as blob to create local object URL
+        this.loadViaBlob(url);
+      }
     };
 
     img.onerror = () => {
-      // Fallback: If CORS blocks direct canvas read, try via proxy or default to dark
-      this.isReady = false;
-      this.notify();
+      this.loadViaBlob(url);
     };
+
+    img.src = url;
   }
 
-  // Calculate perceived relative luminance at specific screen viewport rect
+  // Fallback loader using fetch + createObjectURL (avoids cross-origin canvas taint)
+  async loadViaBlob(url) {
+    try {
+      const res = await fetch(url, { mode: 'cors' });
+      const blob = await res.blob();
+      const blobUrl = URL.createObjectURL(blob);
+      const blobImg = new Image();
+
+      blobImg.onload = () => {
+        const c = document.createElement('canvas');
+        const cx = c.getContext('2d', { willReadFrequently: true });
+        c.width = 640;
+        c.height = Math.round(640 * (blobImg.naturalHeight / (blobImg.naturalWidth || 1))) || 360;
+        cx.drawImage(blobImg, 0, 0, c.width, c.height);
+
+        this.canvas = c;
+        this.ctx = cx;
+        this.image = blobImg;
+        this.isReady = true;
+        this.cache.set(url, { canvas: c, ctx: cx, width: c.width, height: c.height });
+        URL.revokeObjectURL(blobUrl);
+        this.notify();
+      };
+
+      blobImg.onerror = () => {
+        URL.revokeObjectURL(blobUrl);
+        this.isReady = false;
+        this.notify();
+      };
+
+      blobImg.src = blobUrl;
+    } catch {
+      this.isReady = false;
+      this.notify();
+    }
+  }
+
+  // Calculate perceived relative luminance & contrast at exact screen viewport rect
   getLuminanceAtRect(rect) {
-    if (!this.isReady || !this.canvas || !rect) {
-      return { luminance: 40, isLight: false }; // Safe default: dark background -> white text
+    if (!this.isReady || !this.ctx || !this.canvas || !rect || rect.width <= 0 || rect.height <= 0) {
+      return { luminance: 40, isLight: false, isHighVariance: false };
     }
 
     try {
@@ -51,7 +114,7 @@ class WallpaperContrastSampler {
       const imgW = this.canvas.width;
       const imgH = this.canvas.height;
 
-      // Calculate background-size: cover mapping
+      // Exact background-size: cover & background-position: center center mapping
       const vpRatio = vpW / vpH;
       const imgRatio = imgW / imgH;
 
@@ -68,7 +131,7 @@ class WallpaperContrastSampler {
         offsetY = 0;
       }
 
-      // Map element's viewport rect into canvas coordinates
+      // Map element's viewport coordinates into canvas pixels
       const scaleX = imgW / renderW;
       const scaleY = imgH / renderH;
 
@@ -85,28 +148,42 @@ class WallpaperContrastSampler {
 
       let totalLum = 0;
       let count = 0;
-      // Step by 4 bytes (RGBA) with sampling step for performance
+      const sampleValues = [];
+
+      // Sample every 4th pixel (16 bytes) for blazing performance
       for (let i = 0; i < data.length; i += 16) {
         const r = data[i];
         const g = data[i + 1];
         const b = data[i + 2];
-        // Standard perceived relative luminance (ITU-R BT.601)
+        // Perceived relative luminance formula (ITU-R BT.601)
         const lum = 0.299 * r + 0.587 * g + 0.114 * b;
         totalLum += lum;
+        sampleValues.push(lum);
         count++;
       }
 
       const avgLum = count > 0 ? totalLum / count : 40;
-      // Luminance > 138 indicates a bright background region (e.g. bright sky, snow, white clouds)
-      const isLight = avgLum > 138;
+
+      // Compute variance to detect textured or detailed regions
+      let variance = 0;
+      if (count > 1) {
+        for (let i = 0; i < sampleValues.length; i++) {
+          variance += Math.pow(sampleValues[i] - avgLum, 2);
+        }
+        variance /= count;
+      }
+
+      // Threshold: luminance > 132 indicates a light/bright region -> text must be #111111
+      const isLight = avgLum > 132;
+      const isHighVariance = variance > 450;
 
       return {
         luminance: Math.round(avgLum),
-        isLight
+        isLight,
+        isHighVariance
       };
-    } catch (e) {
-      // Security/taint fallback: fallback to dark
-      return { luminance: 40, isLight: false };
+    } catch {
+      return { luminance: 40, isLight: false, isHighVariance: false };
     }
   }
 
