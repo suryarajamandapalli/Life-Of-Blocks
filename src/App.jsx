@@ -1,5 +1,4 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { RotateCw } from 'lucide-react';
 import { 
   getBlocks, 
   createBlock, 
@@ -15,6 +14,12 @@ import {
   subscribeToStorage 
 } from './services/storage';
 import { getRandomWallpaper, fetchLiveWallhavenWallpapers } from './services/wallpapers';
+import { 
+  isWallpaperLocked, 
+  getLockedWallpaper, 
+  setWallpaperLock, 
+  subscribeWallpaperStore 
+} from './services/wallpaperStore';
 import { sound } from './services/sound';
 
 import MainScreen from './components/MainScreen';
@@ -25,6 +30,8 @@ import PomodoroWidget from './components/PomodoroWidget';
 import AppTray from './components/AppTray';
 import QuickNotesModal from './components/QuickNotesModal';
 import GoogleAuthButton from './components/GoogleAuthButton';
+import WallpaperControls from './components/WallpaperControls';
+import StarredWallpapersModal from './components/StarredWallpapersModal';
 
 export default function App() {
   const [blocks, setBlocks] = useState([]);
@@ -37,10 +44,17 @@ export default function App() {
   const [deletingBlock, setDeletingBlock] = useState(null);
   const [isAppTrayOpen, setIsAppTrayOpen] = useState(false);
   const [isScratchpadOpen, setIsScratchpadOpen] = useState(false);
+  const [isGalleryOpen, setIsGalleryOpen] = useState(false);
   const [activeAmbient, setActiveAmbient] = useState(null);
 
-  // Random wallpaper strictly from Wallhaven
-  const [wallpaper, setWallpaper] = useState(() => getRandomWallpaper());
+  // Wallpaper state (restores locked wallpaper if user locked one)
+  const [wallpaper, setWallpaper] = useState(() => {
+    if (isWallpaperLocked()) {
+      const lockedWp = getLockedWallpaper();
+      if (lockedWp) return lockedWp;
+    }
+    return getRandomWallpaper();
+  });
   const [wallpaperLoaded, setWallpaperLoaded] = useState(false);
   const [liveWallpapers, setLiveWallpapers] = useState([]);
   const [isRefreshingWallpaper, setIsRefreshingWallpaper] = useState(false);
@@ -82,11 +96,27 @@ export default function App() {
     fetchLiveWallhavenWallpapers().then((liveList) => {
       if (liveList && liveList.length > 0) {
         setLiveWallpapers(liveList);
-        const randomItem = liveList[Math.floor(Math.random() * liveList.length)];
-        setWallpaper(randomItem);
+        // Only randomize if wallpaper is NOT locked
+        if (!isWallpaperLocked()) {
+          const randomItem = liveList[Math.floor(Math.random() * liveList.length)];
+          setWallpaper(randomItem);
+        }
       }
     });
   }, []);
+
+  // Listen for Wallpaper Lock updates across devices via RTDB
+  useEffect(() => {
+    const unsub = subscribeWallpaperStore(() => {
+      if (isWallpaperLocked()) {
+        const lockedWp = getLockedWallpaper();
+        if (lockedWp && lockedWp.id !== wallpaper?.id) {
+          setWallpaper(lockedWp);
+        }
+      }
+    });
+    return () => unsub();
+  }, [wallpaper?.id]);
 
   // Shuffle to another random wallpaper
   const handleNextWallpaper = async () => {
@@ -106,6 +136,14 @@ export default function App() {
       }
     } finally {
       setTimeout(() => setIsRefreshingWallpaper(false), 350);
+    }
+  };
+
+  // Select wallpaper directly from Starred Gallery
+  const handleSelectWallpaper = (selectedWp) => {
+    setWallpaper(selectedWp);
+    if (isWallpaperLocked()) {
+      setWallpaperLock(true, selectedWp);
     }
   };
 
@@ -145,7 +183,7 @@ export default function App() {
     }
   }, [currentBlockId]);
 
-  // Global Keyboard Navigation: Esc -> Home, Right Shift -> App Tray, P -> Pomodoro, N -> New
+  // Global Keyboard Navigation
   const isRightShiftDownRef = useRef(false);
   const didComboRef = useRef(false);
 
@@ -166,8 +204,11 @@ export default function App() {
         return;
       }
 
-      // Esc -> Home (or close open overlays)
       if (e.key === 'Escape') {
+        if (isGalleryOpen) {
+          setIsGalleryOpen(false);
+          return;
+        }
         if (isAppTrayOpen) {
           setIsAppTrayOpen(false);
           return;
@@ -190,7 +231,6 @@ export default function App() {
         }
       }
 
-      // P or Right Shift + P -> Pomodoro
       if (e.code === 'KeyP') {
         e.preventDefault();
         if (isRightShiftDownRef.current) didComboRef.current = true;
@@ -198,7 +238,6 @@ export default function App() {
         return;
       }
 
-      // N or Right Shift + N on home screen -> Create Block
       if (e.code === 'KeyN' && !currentBlockId) {
         e.preventDefault();
         if (isRightShiftDownRef.current) didComboRef.current = true;
@@ -225,6 +264,7 @@ export default function App() {
       window.removeEventListener('keyup', handleKeyUp);
     };
   }, [
+    isGalleryOpen,
     isAppTrayOpen,
     isScratchpadOpen,
     isCreateModalOpen,
@@ -302,21 +342,18 @@ export default function App() {
         }}
       />
 
-      {/* Top Controls: Google Auth & Real-Time Sync Indicator + Wallpaper Shuffle */}
+      {/* Top Controls: Google Auth & Wallpaper Controls */}
       <div className="fixed top-3.5 right-4 sm:top-5 sm:right-6 z-20 flex items-center gap-2">
-        {/* Google Authentication & Firestore Sync Button */}
+        {/* Google Authentication & RTDB Sync Button */}
         <GoogleAuthButton />
 
-        {/* Wallpaper Shuffle Button — Pure Icon, Zero Text */}
-        <button
-          onClick={handleNextWallpaper}
-          disabled={isRefreshingWallpaper}
-          title="Shuffle Wallpaper"
-          aria-label="Shuffle Wallpaper"
-          className="w-8 h-8 sm:w-9 sm:h-9 rounded-full bg-black/40 hover:bg-black/65 text-white/60 hover:text-white border border-white/10 hover:border-white/30 backdrop-blur-md transition-all duration-200 flex items-center justify-center cursor-pointer shadow-lg active:scale-95 select-none"
-        >
-          <RotateCw className={`w-3.5 h-3.5 ${isRefreshingWallpaper ? 'animate-spin text-white' : ''}`} />
-        </button>
+        {/* Interactive Wallpaper Controls (Shuffle on click; Lock, Star & 3x3 Gallery on hover/long-press) */}
+        <WallpaperControls
+          currentWallpaper={wallpaper}
+          onRefresh={handleNextWallpaper}
+          isRefreshing={isRefreshingWallpaper}
+          onOpenGallery={() => setIsGalleryOpen(true)}
+        />
       </div>
 
       {/* Main Content Area */}
@@ -387,6 +424,14 @@ export default function App() {
       <QuickNotesModal
         isOpen={isScratchpadOpen}
         onClose={() => setIsScratchpadOpen(false)}
+      />
+
+      {/* Starred Wallpapers 3x3 Gallery Modal */}
+      <StarredWallpapersModal
+        isOpen={isGalleryOpen}
+        onClose={() => setIsGalleryOpen(false)}
+        activeWallpaper={wallpaper}
+        onSelectWallpaper={handleSelectWallpaper}
       />
 
       {/* Create Block Modal */}
