@@ -268,14 +268,14 @@ export default function PomodoroWidget({ isVisible, onClose, onToggleSpotify, is
 
   return (
     <div
-      className="relative select-none animate-modal-in transition-all duration-300 w-[276px] sm:w-[290px] flex-shrink-0"
+      className="relative select-none animate-modal-in transition-all duration-300 w-full max-w-[280px] sm:w-[285px] flex-shrink-0"
       style={{ perspective: '1000px' }}
     >
       {/* ========================================================
           RETRO GAMEBOY / BRAUN PHYSICAL ELECTRONIC DEVICE CHASSIS
           ======================================================== */}
       <div 
-        className="relative w-[276px] sm:w-[290px] rounded-[28px] p-3.5 sm:p-4 select-none"
+        className="relative w-full rounded-[28px] p-3.5 sm:p-4 select-none"
         style={{
           background: 'linear-gradient(180deg, #c7cbd1 0%, #b5b9c0 50%, #a2a6ad 100%)',
           boxShadow: `

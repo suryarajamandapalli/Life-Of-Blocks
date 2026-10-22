@@ -463,31 +463,62 @@ export default function App() {
 
       {/* Floating Widgets Console (Bottom-Left)
           - Desktop (sm+): Spotify pops up directly ABOVE Pomodoro with the exact same width
-          - Mobile (<sm): Pomodoro and Spotify sit SIDE BY SIDE with smooth horizontal scroll */}
+          - Mobile (<sm): Pomodoro and Spotify sit SIDE BY SIDE with smooth horizontal snap scroll */}
       {(isPomodoroVisible || isSpotifyVisible) && (
-        <div 
-          className="fixed bottom-3 sm:bottom-5 left-3 sm:left-6 z-40 max-w-[calc(100vw-24px)] flex flex-row sm:flex-col-reverse items-end sm:items-start gap-2.5 sm:gap-3 overflow-x-auto sm:overflow-visible pb-1 select-none pointer-events-none"
-          style={{ scrollbarWidth: 'none', msOverflowStyle: 'none' }}
-        >
-          {isPomodoroVisible && (
-            <div className="pointer-events-auto flex-shrink-0">
-              <PomodoroWidget
-                isVisible={true}
-                onClose={handleTogglePomodoro}
-                onToggleSpotify={handleToggleSpotify}
-                isSpotifyVisible={isSpotifyVisible}
-              />
+        <div className="fixed bottom-3 sm:bottom-5 left-3 right-3 sm:right-auto sm:left-6 z-40 flex flex-col sm:flex-col-reverse items-start select-none pointer-events-none">
+          {/* Mobile fast switcher pills when both are open */}
+          {isPomodoroVisible && isSpotifyVisible && (
+            <div className="sm:hidden flex items-center gap-1.5 mb-2 px-1 pointer-events-auto">
+              <button
+                type="button"
+                onClick={() => {
+                  const el = document.getElementById('lob-pomo-widget');
+                  el?.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'start' });
+                }}
+                className="px-2.5 py-1 rounded-full text-[11px] font-medium bg-black/60 hover:bg-black/80 text-white/90 border border-white/20 backdrop-blur-md cursor-pointer transition-all active:scale-95 shadow-md flex items-center gap-1.5"
+              >
+                <span>⏱️</span>
+                <span>Focus</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  const el = document.getElementById('lob-spotify-widget');
+                  el?.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'start' });
+                }}
+                className="px-2.5 py-1 rounded-full text-[11px] font-medium bg-black/60 hover:bg-black/80 text-emerald-300 border border-emerald-500/30 backdrop-blur-md cursor-pointer transition-all active:scale-95 shadow-md flex items-center gap-1.5"
+              >
+                <span>🎵</span>
+                <span>Spotify</span>
+              </button>
             </div>
           )}
 
-          {isSpotifyVisible && (
-            <div className="pointer-events-auto flex-shrink-0">
-              <SpotifyWidget
-                isVisible={true}
-                onClose={handleToggleSpotify}
-              />
-            </div>
-          )}
+          {/* Widgets Container */}
+          <div 
+            className="w-full max-w-[calc(100vw-24px)] sm:max-w-none flex flex-row sm:flex-col-reverse items-end sm:items-start gap-2.5 sm:gap-3 overflow-x-auto sm:overflow-visible pb-1 select-none pointer-events-none snap-x snap-mandatory"
+            style={{ scrollbarWidth: 'none', msOverflowStyle: 'none' }}
+          >
+            {isPomodoroVisible && (
+              <div id="lob-pomo-widget" className="pointer-events-auto flex-shrink-0 snap-start">
+                <PomodoroWidget
+                  isVisible={true}
+                  onClose={handleTogglePomodoro}
+                  onToggleSpotify={handleToggleSpotify}
+                  isSpotifyVisible={isSpotifyVisible}
+                />
+              </div>
+            )}
+
+            {isSpotifyVisible && (
+              <div id="lob-spotify-widget" className="pointer-events-auto flex-shrink-0 snap-start">
+                <SpotifyWidget
+                  isVisible={true}
+                  onClose={handleToggleSpotify}
+                />
+              </div>
+            )}
+          </div>
         </div>
       )}
 
