@@ -1,6 +1,6 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import CircularCheckbox from './CircularCheckbox';
-import { Pencil, Trash2 } from 'lucide-react';
+import { Pencil, Trash2, Check, X } from 'lucide-react';
 
 export default function TodoItem({
   todo,
@@ -8,126 +8,59 @@ export default function TodoItem({
   deleteProgress = 0,
   onSelect,
   onToggle,
-  onEdit,
+  onUpdate,
   onDelete,
-  onOpenContextMenu,
   isLightMode = false
 }) {
-  const [isPressing, setIsPressing] = useState(false);
-  const [pressProgress, setPressProgress] = useState(0);
-  const animationFrameRef = useRef(null);
-  const startTimeRef = useRef(0);
-  const touchStartPosRef = useRef({ x: 0, y: 0 });
-  const didTriggerMenuRef = useRef(false);
+  const [isEditing, setIsEditing] = useState(false);
+  const [editText, setEditText] = useState(todo.title || '');
+  const editInputRef = useRef(null);
 
-  const HOLD_DURATION = 450; // ms for mobile touch long-press menu
+  useEffect(() => {
+    setEditText(todo.title || '');
+  }, [todo.title]);
 
-  const startHold = (clientX, clientY) => {
-    didTriggerMenuRef.current = false;
-    touchStartPosRef.current = { x: clientX, y: clientY };
-    startTimeRef.current = Date.now();
-    setIsPressing(true);
-    setPressProgress(0);
-
-    const updateProgress = () => {
-      const elapsed = Date.now() - startTimeRef.current;
-      const progress = Math.min(1, elapsed / HOLD_DURATION);
-      setPressProgress(progress);
-
-      if (progress < 1) {
-        animationFrameRef.current = requestAnimationFrame(updateProgress);
-      } else {
-        didTriggerMenuRef.current = true;
-        setIsPressing(false);
-        setPressProgress(0);
-        onOpenContextMenu?.(
-          { x: clientX, y: clientY },
-          todo
-        );
-      }
-    };
-
-    animationFrameRef.current = requestAnimationFrame(updateProgress);
-  };
-
-  const cancelHold = () => {
-    if (animationFrameRef.current) {
-      cancelAnimationFrame(animationFrameRef.current);
+  useEffect(() => {
+    if (isEditing) {
+      editInputRef.current?.focus();
+      editInputRef.current?.select();
     }
-    setIsPressing(false);
-    setPressProgress(0);
+  }, [isEditing]);
+
+  const handleStartEdit = (e) => {
+    e?.stopPropagation();
+    setEditText(todo.title || '');
+    setIsEditing(true);
   };
 
-  // Touch handlers
-  const handleTouchStart = (e) => {
-    const touch = e.touches[0];
-    startHold(touch.clientX, touch.clientY);
-  };
-
-  const handleTouchMove = (e) => {
-    if (!isPressing) return;
-    const touch = e.touches[0];
-    const dx = Math.abs(touch.clientX - touchStartPosRef.current.x);
-    const dy = Math.abs(touch.clientY - touchStartPosRef.current.y);
-    if (dx > 10 || dy > 10) {
-      cancelHold();
+  const handleSaveEdit = (e) => {
+    e?.preventDefault();
+    e?.stopPropagation();
+    const trimmed = editText.trim();
+    if (trimmed && trimmed !== todo.title) {
+      onUpdate?.(todo.id, trimmed);
     }
+    setIsEditing(false);
   };
 
-  const handleTouchEnd = () => {
-    cancelHold();
-  };
-
-  // Mouse handlers
-  const handleMouseDown = (e) => {
-    onSelect?.(todo);
-    if (e.button !== 0) return;
-    startHold(e.clientX, e.clientY);
-  };
-
-  const handleMouseUp = () => {
-    cancelHold();
-  };
-
-  const handleMouseLeave = () => {
-    cancelHold();
-  };
-
-  // Right click handler
-  const handleContextMenu = (e) => {
-    e.preventDefault();
-    cancelHold();
-    onSelect?.(todo);
-    onOpenContextMenu?.({ x: e.clientX, y: e.clientY }, todo);
-  };
-
-  const handleRowClick = () => {
-    if (didTriggerMenuRef.current) {
-      didTriggerMenuRef.current = false;
-      return;
-    }
-    onToggle?.(todo);
+  const handleCancelEdit = (e) => {
+    e?.stopPropagation();
+    setEditText(todo.title || '');
+    setIsEditing(false);
   };
 
   return (
     <div
-      onClick={handleRowClick}
-      onContextMenu={handleContextMenu}
-      onTouchStart={handleTouchStart}
-      onTouchMove={handleTouchMove}
-      onTouchEnd={handleTouchEnd}
-      onMouseDown={handleMouseDown}
-      onMouseUp={handleMouseUp}
-      onMouseLeave={handleMouseLeave}
+      onClick={() => onSelect?.(todo)}
       onMouseEnter={() => onSelect?.(todo)}
       tabIndex={0}
       role="checkbox"
       aria-checked={Boolean(todo.completed)}
-      className={`group relative flex items-center gap-3.5 px-3 py-2.5 sm:py-3 rounded-xl cursor-pointer select-none transition-all duration-150 overflow-hidden outline-none ${
+      className={`group relative flex items-center gap-3 px-3 py-2.5 sm:py-2.5 rounded-xl select-none transition-all duration-150 overflow-hidden outline-none ${
         isSelected
-          ? (isLightMode ? 'bg-black/[0.06] backdrop-blur-xs' : 'bg-white/[0.07] backdrop-blur-xs')
-          : (isLightMode ? 'hover:bg-black/[0.04] backdrop-blur-xs' : 'hover:bg-white/[0.05] backdrop-blur-xs')
-      } ${todo.completed ? 'opacity-55' : 'opacity-100'}`}
+          ? (isLightMode ? 'bg-black/[0.06] backdrop-blur-xs' : 'bg-white/[0.08] backdrop-blur-xs')
+          : (isLightMode ? 'hover:bg-black/[0.03] backdrop-blur-xs' : 'hover:bg-white/[0.05] backdrop-blur-xs')
+      } ${todo.completed && !isEditing ? 'opacity-60' : 'opacity-100'}`}
     >
       {/* Long-Press DELETE Key Fill Progress Indicator */}
       {deleteProgress > 0 && (
@@ -137,88 +70,115 @@ export default function TodoItem({
         />
       )}
 
-      {/* Checkbox with circular long-press indicator ring */}
+      {/* Checkbox */}
       <div className="relative flex items-center justify-center flex-shrink-0 z-10">
         <CircularCheckbox
           checked={Boolean(todo.completed)}
           onChange={() => onToggle?.(todo)}
           isLightMode={isLightMode}
         />
+      </div>
 
-        {/* Long press context menu indicator ring */}
-        {isPressing && (
-          <svg
-            className="absolute -inset-2 w-8 h-8 pointer-events-none transform -rotate-90"
-            viewBox="0 0 32 32"
+      {/* Inline Editing Form */}
+      {isEditing ? (
+        <form 
+          onSubmit={handleSaveEdit} 
+          className="flex-1 flex items-center gap-1.5 z-10" 
+          onClick={(e) => e.stopPropagation()}
+        >
+          <input
+            ref={editInputRef}
+            type="text"
+            value={editText}
+            onChange={(e) => setEditText(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Escape') {
+                e.stopPropagation();
+                handleCancelEdit(e);
+              }
+            }}
+            maxLength={140}
+            className={`w-full px-2.5 py-1 rounded-lg text-[14.5px] sm:text-[15px] focus:outline-none transition-all border ${
+              isLightMode 
+                ? 'bg-white/70 border-black/25 text-zinc-950 placeholder-zinc-500 focus:border-black/50 shadow-xs' 
+                : 'bg-black/45 border-white/25 text-white placeholder-white/40 focus:border-white/50 shadow-xs'
+            }`}
+          />
+          <button
+            type="submit"
+            title="Save"
+            className={`p-1.5 rounded-lg cursor-pointer transition-colors ${
+              isLightMode 
+                ? 'text-emerald-700 hover:bg-black/5 active:bg-black/10' 
+                : 'text-emerald-400 hover:bg-white/10 active:bg-white/15'
+            }`}
           >
-            <circle
-              cx="16"
-              cy="16"
-              r="13"
-              fill="none"
-              stroke={isLightMode ? 'rgba(0, 0, 0, 0.15)' : 'rgba(255, 255, 255, 0.15)'}
-              strokeWidth="2"
-            />
-            <circle
-              cx="16"
-              cy="16"
-              r="13"
-              fill="none"
-              stroke={isLightMode ? 'rgba(0, 0, 0, 0.85)' : 'rgba(255, 255, 255, 0.85)'}
-              strokeWidth="2"
-              strokeDasharray={2 * Math.PI * 13}
-              strokeDashoffset={2 * Math.PI * 13 * (1 - pressProgress)}
-              strokeLinecap="round"
-            />
-          </svg>
-        )}
-      </div>
+            <Check className="w-4 h-4 stroke-[2.5]" />
+          </button>
+          <button
+            type="button"
+            onClick={handleCancelEdit}
+            title="Cancel"
+            className={`p-1.5 rounded-lg cursor-pointer transition-colors ${
+              isLightMode 
+                ? 'text-zinc-600 hover:bg-black/5 active:bg-black/10' 
+                : 'text-white/50 hover:bg-white/10 active:bg-white/15'
+            }`}
+          >
+            <X className="w-4 h-4 stroke-[2.5]" />
+          </button>
+        </form>
+      ) : (
+        <>
+          {/* Todo Title */}
+          <span
+            onClick={() => onToggle?.(todo)}
+            onDoubleClick={handleStartEdit}
+            className={`flex-1 text-[15px] sm:text-[15.5px] leading-snug tracking-wide transition-all duration-150 break-words z-10 cursor-pointer ${
+              todo.completed
+                ? (isLightMode 
+                    ? 'line-through text-zinc-900/45 font-normal drop-shadow-[0_1px_2px_rgba(255,255,255,0.7)]' 
+                    : 'line-through text-white/40 font-normal drop-shadow-[0_1px_3px_rgba(0,0,0,0.85)]')
+                : (isLightMode 
+                    ? 'text-zinc-950 font-medium group-hover:text-black drop-shadow-[0_1px_2px_rgba(255,255,255,0.7)]' 
+                    : 'text-white/95 font-normal group-hover:text-white drop-shadow-[0_1px_4px_rgba(0,0,0,0.85)]')
+            }`}
+          >
+            {todo.title}
+          </span>
 
-      {/* Todo title */}
-      <span
-        className={`flex-1 text-[15px] sm:text-[15.5px] leading-snug tracking-wide transition-all duration-150 break-words z-10 ${
-          todo.completed
-            ? (isLightMode 
-                ? 'line-through text-zinc-900/40 font-normal drop-shadow-[0_1px_3px_rgba(255,255,255,0.6)]' 
-                : 'line-through text-white/35 font-normal drop-shadow-[0_1px_4px_rgba(0,0,0,0.8)]')
-            : (isLightMode 
-                ? 'text-zinc-950 font-medium group-hover:text-black drop-shadow-[0_1px_3px_rgba(255,255,255,0.6)]' 
-                : 'text-white/95 font-normal group-hover:text-white drop-shadow-[0_1px_4px_rgba(0,0,0,0.8)]')
-        }`}
-      >
-        {todo.title}
-      </span>
+          {/* Inline Action Icons (Pencil & Trash) */}
+          <div 
+            className="flex items-center gap-1 opacity-70 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity duration-150 z-10 flex-shrink-0"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <button
+              onClick={handleStartEdit}
+              title="Edit task"
+              className={`p-1.5 rounded-lg transition-colors cursor-pointer active:scale-95 ${
+                isLightMode 
+                  ? 'text-zinc-600 hover:text-black hover:bg-black/[0.08]' 
+                  : 'text-white/60 hover:text-white hover:bg-white/[0.14]'
+              }`}
+            >
+              <Pencil className="w-3.5 h-3.5" />
+            </button>
+            <button
+              onClick={() => onDelete?.(todo)}
+              title="Delete task"
+              className={`p-1.5 rounded-lg transition-colors cursor-pointer active:scale-95 ${
+                isLightMode 
+                  ? 'text-zinc-600 hover:text-rose-600 hover:bg-rose-500/10' 
+                  : 'text-white/60 hover:text-rose-400 hover:bg-rose-500/20'
+              }`}
+            >
+              <Trash2 className="w-3.5 h-3.5" />
+            </button>
+          </div>
+        </>
+      )}
 
-      {/* Desktop Hover Actions (Edit & Delete buttons strictly on hover) */}
-      <div 
-        className="hidden sm:flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity duration-150 z-10 flex-shrink-0"
-        onClick={(e) => e.stopPropagation()}
-      >
-        <button
-          onClick={() => onEdit?.(todo)}
-          title="Edit task"
-          className={`p-1.5 rounded-lg transition-colors cursor-pointer ${
-            isLightMode 
-              ? 'text-zinc-600 hover:text-black hover:bg-black/[0.08]' 
-              : 'text-white/45 hover:text-white hover:bg-white/[0.12]'
-          }`}
-        >
-          <Pencil className="w-3.5 h-3.5" />
-        </button>
-        <button
-          onClick={() => onDelete?.(todo)}
-          title="Delete task"
-          className={`p-1.5 rounded-lg transition-colors cursor-pointer ${
-            isLightMode 
-              ? 'text-zinc-600 hover:text-rose-600 hover:bg-rose-50' 
-              : 'text-white/45 hover:text-rose-400 hover:bg-rose-500/20'
-          }`}
-        >
-          <Trash2 className="w-3.5 h-3.5" />
-        </button>
-      </div>
-
-      {/* Deleting Indicator Label */}
+      {/* Deleting Indicator Label for Hold-Delete */}
       {deleteProgress > 0 && (
         <span className="text-[11px] font-mono font-medium text-rose-500 dark:text-rose-300 z-10 flex-shrink-0 animate-pulse ml-2">
           Hold Del ({Math.round(deleteProgress * 100)}%)

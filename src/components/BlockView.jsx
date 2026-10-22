@@ -2,9 +2,6 @@ import React, { useState, useRef, useEffect } from 'react';
 import { ArrowLeft, Loader2 } from 'lucide-react';
 import TodoItem from './TodoItem';
 import FileTile from './FileTile';
-import ContextMenu from './ContextMenu';
-import EditTodoModal from './EditTodoModal';
-import ConfirmModal from './ConfirmModal';
 import FileViewer from './FileViewer';
 import { useAdaptiveContrast } from '../hooks/useAdaptiveContrast';
 
@@ -24,7 +21,7 @@ export default function BlockView({
   onDownloadFile,
   onDeleteFile
 }) {
-  // Localized Adaptive Contrast Refs (Evaluates exact screen regions)
+  // Localized Adaptive Contrast Refs
   const headerRef = useRef(null);
   const tasksRef = useRef(null);
   const filesRef = useRef(null);
@@ -37,19 +34,19 @@ export default function BlockView({
   const [newTodoTitle, setNewTodoTitle] = useState('');
   const todoInputRef = useRef(null);
 
-  // Selected task & Long-press Delete key tracking
+  // Selected task & Long-press Delete key tracking (desktop power user)
   const [selectedTodoId, setSelectedTodoId] = useState(null);
   const [deleteProgress, setDeleteProgress] = useState(0);
   const deleteHoldFrameRef = useRef(null);
   const deleteHoldStartRef = useRef(0);
 
-  const [contextMenuPos, setContextMenuPos] = useState(null);
-  const [activeTodo, setActiveTodo] = useState(null);
+  // Lightweight Undo Toast for Task Deletion
+  const [undoTodo, setUndoTodo] = useState(null);
+  const undoTimerRef = useRef(null);
 
-  const [editingTodo, setEditingTodo] = useState(null);
-  const [deletingTodo, setDeletingTodo] = useState(null);
-  const [deletingFile, setDeletingFile] = useState(null);
+  // File viewing and non-intrusive deletion confirmation
   const [viewingFile, setViewingFile] = useState(null);
+  const [deletingFile, setDeletingFile] = useState(null);
 
   const [uploadProgress, setUploadProgress] = useState(null);
   const [uploadingFileName, setUploadingFileName] = useState('');
@@ -72,7 +69,7 @@ export default function BlockView({
     }
   }, [isAddingTodo]);
 
-  // Keyboard Navigation: Esc -> Home, N -> Add Task, O -> Upload, Hold Del -> Delete Task
+  // Keyboard Navigation: Esc -> Back, N -> Add Task, O -> Upload, Hold Del -> Delete Task
   useEffect(() => {
     const isInputActive = () => {
       const el = document.activeElement;
@@ -81,7 +78,6 @@ export default function BlockView({
     };
 
     const handleKeyDown = (e) => {
-      // Ignore if user is actively typing in an input
       if (isInputActive()) {
         if (e.key === 'Escape' && isAddingTodo) {
           setIsAddingTodo(false);
@@ -90,26 +86,14 @@ export default function BlockView({
         return;
       }
 
-      // Esc -> Back to Home
+      // Esc -> Back to Home or dismiss active states
       if (e.key === 'Escape') {
         if (viewingFile) {
           setViewingFile(null);
           return;
         }
-        if (editingTodo) {
-          setEditingTodo(null);
-          return;
-        }
-        if (deletingTodo) {
-          setDeletingTodo(null);
-          return;
-        }
         if (deletingFile) {
           setDeletingFile(null);
-          return;
-        }
-        if (contextMenuPos) {
-          setContextMenuPos(null);
           return;
         }
         if (isAddingTodo) {
@@ -121,14 +105,14 @@ export default function BlockView({
         return;
       }
 
-      // N or Right Shift + N -> Add Task
+      // N -> Add Task
       if (e.code === 'KeyN') {
         e.preventDefault();
         setIsAddingTodo(true);
         return;
       }
 
-      // O or Right Shift + O -> Upload File
+      // O -> Upload File
       if (e.code === 'KeyO') {
         e.preventDefault();
         fileInputRef.current?.click();
@@ -140,7 +124,7 @@ export default function BlockView({
         if (selectedTodoId && !deleteHoldStartRef.current) {
           e.preventDefault();
           deleteHoldStartRef.current = Date.now();
-          const HOLD_TIME = 650; // ms required hold duration
+          const HOLD_TIME = 600;
 
           const step = () => {
             const elapsed = Date.now() - deleteHoldStartRef.current;
@@ -154,7 +138,7 @@ export default function BlockView({
               setDeleteProgress(0);
               const todoToDelete = todos.find((t) => t.id === selectedTodoId);
               if (todoToDelete) {
-                onDeleteTodo(block.id, todoToDelete.id);
+                handleDeleteTask(todoToDelete);
               }
             }
           };
@@ -163,7 +147,7 @@ export default function BlockView({
         }
       }
 
-      // Arrow navigation
+      // Arrow navigation between tasks
       if (e.key === 'ArrowDown') {
         e.preventDefault();
         const currIdx = todos.findIndex((t) => t.id === selectedTodoId);
@@ -207,12 +191,8 @@ export default function BlockView({
     selectedTodoId,
     isAddingTodo,
     viewingFile,
-    editingTodo,
-    deletingTodo,
     deletingFile,
-    contextMenuPos,
-    onBack,
-    onDeleteTodo
+    onBack
   ]);
 
   const handleCreateTodo = async (e) => {
@@ -240,9 +220,22 @@ export default function BlockView({
     }
   };
 
-  const handleOpenContextMenu = (pos, todo) => {
-    setActiveTodo(todo);
-    setContextMenuPos(pos);
+  // Instant task deletion with non-intrusive Undo toast
+  const handleDeleteTask = (todo) => {
+    if (!todo) return;
+    setUndoTodo(todo);
+    onDeleteTodo(block.id, todo.id);
+
+    if (undoTimerRef.current) clearTimeout(undoTimerRef.current);
+    undoTimerRef.current = setTimeout(() => {
+      setUndoTodo(null);
+    }, 4500);
+  };
+
+  const handleUndoDelete = () => {
+    if (!undoTodo) return;
+    onAddTodo(block.id, undoTodo.title);
+    setUndoTodo(null);
   };
 
   const handleTriggerUpload = () => {
@@ -272,378 +265,361 @@ export default function BlockView({
   const completedCount = todos.filter((t) => t.completed).length;
 
   return (
-    <div 
-      className="w-[calc(100vw-32px)] sm:w-[min(860px,calc(100vw-64px))] mx-auto pt-[80px] sm:pt-[96px] pb-28 animate-page-in select-none"
-    >
+    <>
       {/* ========================================================
-          01 — HEADER (Local Adaptive Contrast)
-          36x36px circular back button, 32px block title, subtle metadata
+          01 — FLOATING TOP-LEFT BACK BUTTON
+          Matches top-right controls alignment and liquid-glass style
           ======================================================== */}
-      <div ref={headerRef} className="transition-colors duration-200">
-        {/* Back Button */}
+      <div className="fixed top-3.5 left-4 sm:top-5 sm:left-6 z-20 flex items-center">
         <button
           onClick={onBack}
           title="Back to Blocks (Esc)"
           aria-label="Back to Blocks"
-          className={`w-9 h-9 rounded-full active:scale-95 transition-all flex items-center justify-center cursor-pointer focus-visible:outline-none shadow-md backdrop-blur-md ${
+          className={`w-9 h-9 sm:w-10 sm:h-10 rounded-full flex items-center justify-center cursor-pointer transition-all duration-200 active:scale-95 shadow-lg backdrop-blur-xl border ${
             headerContrast.isLight
-              ? 'bg-white/60 hover:bg-white/85 border border-black/15 text-zinc-900 hover:text-black focus-visible:ring-1 focus-visible:ring-black/40'
-              : 'bg-black/35 hover:bg-black/60 border border-white/15 text-white/80 hover:text-white focus-visible:ring-1 focus-visible:ring-white/40'
+              ? 'bg-white/65 hover:bg-white/85 border-black/15 text-zinc-900 hover:text-black'
+              : 'bg-black/40 hover:bg-black/60 border-white/20 text-white/85 hover:text-white'
           }`}
         >
-          <ArrowLeft className="w-4 h-4 stroke-[2]" />
+          <ArrowLeft className="w-4 h-4 stroke-[2.2]" />
         </button>
+      </div>
 
-        {/* Title & Metadata */}
-        <div className="mt-6">
+      {/* ========================================================
+          02 — MAIN INNER BLOCK CONTAINER
+          Distraction-free, minimal, zero bulky boxes
+          ======================================================== */}
+      <div 
+        className="w-full max-w-[760px] mx-auto px-4 sm:px-6 pt-20 sm:pt-24 pb-28 animate-page-in select-none"
+      >
+        {/* Block Header (Title only, no redundant metadata clutter) */}
+        <div ref={headerRef} className="mb-8 sm:mb-10">
           <h1 
-            className={`text-[32px] font-semibold tracking-tight leading-tight break-words select-text transition-colors duration-200 ${
+            className={`text-2xl sm:text-3xl md:text-4xl font-semibold tracking-tight leading-tight break-words select-text transition-colors duration-200 ${
               headerContrast.isLight
-                ? 'text-zinc-950 drop-shadow-[0_1px_8px_rgba(255,255,255,0.85)]'
-                : 'text-white drop-shadow-[0_2px_10px_rgba(0,0,0,0.85)]'
+                ? 'text-zinc-950 drop-shadow-[0_1px_6px_rgba(255,255,255,0.85)]'
+                : 'text-white drop-shadow-[0_2px_12px_rgba(0,0,0,0.85)]'
             }`}
           >
             {block.name}
           </h1>
-          <p 
-            className={`text-[13px] font-normal tracking-wide mt-1 transition-colors duration-200 ${
-              headerContrast.isLight
-                ? 'text-zinc-800/80 drop-shadow-[0_1px_4px_rgba(255,255,255,0.7)]'
-                : 'text-white/60 drop-shadow-[0_1px_4px_rgba(0,0,0,0.8)]'
-            }`}
-          >
-            {todos.length} {todos.length === 1 ? 'task' : 'tasks'} · {files.length} {files.length === 1 ? 'file' : 'files'}
-          </p>
-        </div>
-      </div>
-
-      {/* ========================================================
-          02 — TASKS SECTION (Local Adaptive Contrast)
-          Simple floating rows (○ Task name), zero bulky containers!
-          ======================================================== */}
-      <div ref={tasksRef} className="mt-11 sm:mt-12 transition-colors duration-200">
-        {/* Section Header */}
-        <div className="flex items-center justify-between">
-          <span 
-            className={`text-[11.5px] font-semibold tracking-[0.16em] uppercase transition-colors duration-200 ${
-              tasksContrast.isLight ? 'text-zinc-800/75' : 'text-white/50'
-            }`}
-          >
-            TODO
-          </span>
-          <span 
-            className={`text-[12px] font-medium tracking-wider font-mono transition-colors duration-200 ${
-              tasksContrast.isLight ? 'text-zinc-700/65' : 'text-white/40'
-            }`}
-          >
-            {completedCount} / {todos.length}
-          </span>
         </div>
 
-        {/* Subtle Separator */}
-        <div 
-          className={`w-full h-px mt-2 mb-3.5 transition-colors duration-200 ${
-            tasksContrast.isLight ? 'bg-black/[0.12]' : 'bg-white/[0.08]'
-          }`} 
-        />
-
-        {/* Loading State */}
-        {loadingTodos && (
-          <div className={`py-3 text-xs tracking-wider ${tasksContrast.isLight ? 'text-zinc-700/60' : 'text-white/40'}`}>
-            Loading tasks...
-          </div>
-        )}
-
-        {/* Floating Task Rows: Distraction-free, zero heavy container */}
-        {!loadingTodos && todos.length > 0 && (
-          <div className="flex flex-col gap-0.5 sm:gap-1 mb-2.5">
-            {todos.map((todo) => (
-              <TodoItem
-                key={todo.id}
-                todo={todo}
-                isSelected={todo.id === selectedTodoId}
-                deleteProgress={todo.id === selectedTodoId ? deleteProgress : 0}
-                onSelect={(t) => setSelectedTodoId(t.id)}
-                onToggle={(t) => onToggleTodo(block.id, t.id, !t.completed)}
-                onEdit={(t) => setEditingTodo(t)}
-                onDelete={(t) => setDeletingTodo(t)}
-                onOpenContextMenu={handleOpenContextMenu}
-                isLightMode={tasksContrast.isLight}
-              />
-            ))}
-          </div>
-        )}
-
-        {/* Empty State */}
-        {!loadingTodos && todos.length === 0 && !isAddingTodo && (
-          <div className="py-2 mb-2">
-            <p className={`text-[13.5px] ${tasksContrast.isLight ? 'text-zinc-700/65' : 'text-white/40'}`}>
-              No tasks yet
-            </p>
-          </div>
-        )}
-
-        {/* Inline Add Task (Floating pill row) */}
-        {isAddingTodo ? (
-          <form 
-            onSubmit={handleCreateTodo} 
-            className={`flex items-center gap-2 px-3.5 py-2 rounded-xl transition-all ${
-              tasksContrast.isLight
-                ? 'bg-black/[0.05] border border-black/15 shadow-sm'
-                : 'bg-white/[0.08] border border-white/15 shadow-sm'
-            }`}
-          >
-            <input
-              ref={todoInputRef}
-              type="text"
-              value={newTodoTitle}
-              onChange={(e) => setNewTodoTitle(e.target.value)}
-              onKeyDown={handleTodoInputKeyDown}
-              placeholder="What needs to be done?"
-              className={`flex-1 bg-transparent text-[14.5px] sm:text-[15px] focus:outline-none ${
-                tasksContrast.isLight
-                  ? 'text-zinc-950 placeholder-zinc-700/50'
-                  : 'text-white placeholder-white/35'
+        {/* ========================================================
+            03 — TASKS SECTION
+            Pure floating rows: ○ Task name, zero lines cutting wallpaper
+            ======================================================== */}
+        <div ref={tasksRef} className="mb-10 sm:mb-12">
+          {/* Section Heading & Counter */}
+          <div className="flex items-center justify-between mb-3 px-1">
+            <span 
+              className={`text-[11.5px] font-semibold tracking-[0.18em] uppercase ${
+                tasksContrast.isLight 
+                  ? 'text-zinc-800/80 drop-shadow-[0_1px_2px_rgba(255,255,255,0.7)]' 
+                  : 'text-white/70 drop-shadow-[0_1px_3px_rgba(0,0,0,0.85)]'
               }`}
-              maxLength={140}
-            />
-            <div className="flex items-center gap-1.5 flex-shrink-0">
-              <button
-                type="button"
-                onClick={() => {
-                  setNewTodoTitle('');
-                  setIsAddingTodo(false);
-                }}
-                className={`px-2.5 py-1 text-xs transition-colors cursor-pointer ${
-                  tasksContrast.isLight ? 'text-zinc-700 hover:text-black' : 'text-white/45 hover:text-white'
+            >
+              TASKS
+            </span>
+            {todos.length > 0 && (
+              <span 
+                className={`text-xs font-mono font-medium tracking-wider ${
+                  tasksContrast.isLight ? 'text-zinc-700/70' : 'text-white/50'
                 }`}
               >
-                Cancel
-              </button>
-              <button
-                type="submit"
-                disabled={!newTodoTitle.trim()}
-                className={`px-3 py-1 rounded-lg text-xs font-semibold disabled:opacity-30 transition-all cursor-pointer shadow-sm active:scale-95 ${
-                  tasksContrast.isLight
-                    ? 'bg-zinc-900 text-white hover:bg-black'
-                    : 'bg-white text-black hover:bg-white/90'
-                }`}
-              >
-                Add
-              </button>
+                {completedCount} / {todos.length}
+              </span>
+            )}
+          </div>
+
+          {/* Loading Tasks */}
+          {loadingTodos && (
+            <div className={`py-3 text-xs tracking-wider px-1 ${tasksContrast.isLight ? 'text-zinc-700/60' : 'text-white/40'}`}>
+              Loading tasks...
             </div>
-          </form>
-        ) : (
+          )}
+
+          {/* Floating Task Rows: Distraction-free */}
+          {!loadingTodos && todos.length > 0 && (
+            <div className="flex flex-col gap-1 mb-2">
+              {todos.map((todo) => (
+                <TodoItem
+                  key={todo.id}
+                  todo={todo}
+                  isSelected={todo.id === selectedTodoId}
+                  deleteProgress={todo.id === selectedTodoId ? deleteProgress : 0}
+                  onSelect={(t) => setSelectedTodoId(t.id)}
+                  onToggle={(t) => onToggleTodo(block.id, t.id, !t.completed)}
+                  onUpdate={(todoId, newTitle) => onUpdateTodo(block.id, todoId, { title: newTitle })}
+                  onDelete={() => handleDeleteTask(todo)}
+                  isLightMode={tasksContrast.isLight}
+                />
+              ))}
+            </div>
+          )}
+
+          {/* Empty State */}
+          {!loadingTodos && todos.length === 0 && !isAddingTodo && (
+            <div className="py-2 mb-2 px-1">
+              <p className={`text-[13.5px] font-normal ${tasksContrast.isLight ? 'text-zinc-700/70' : 'text-white/45'}`}>
+                No tasks yet
+              </p>
+            </div>
+          )}
+
+          {/* Inline Add Task Input */}
+          {isAddingTodo ? (
+            <form 
+              onSubmit={handleCreateTodo} 
+              className={`flex items-center gap-3 px-3.5 py-2.5 rounded-xl transition-all duration-150 backdrop-blur-md border ${
+                tasksContrast.isLight
+                  ? 'bg-white/55 border-black/15 shadow-sm'
+                  : 'bg-black/40 border-white/20 shadow-lg'
+              }`}
+            >
+              <div className={`w-[19px] h-[19px] rounded-full border border-dashed flex-shrink-0 ${
+                tasksContrast.isLight ? 'border-black/40' : 'border-white/40'
+              }`} />
+              <input
+                ref={todoInputRef}
+                type="text"
+                value={newTodoTitle}
+                onChange={(e) => setNewTodoTitle(e.target.value)}
+                onKeyDown={handleTodoInputKeyDown}
+                placeholder="What needs to be done?"
+                className={`flex-1 bg-transparent text-[15px] focus:outline-none ${
+                  tasksContrast.isLight
+                    ? 'text-zinc-950 placeholder-zinc-500'
+                    : 'text-white placeholder-white/40'
+                }`}
+                maxLength={140}
+              />
+              <div className="flex items-center gap-1.5 flex-shrink-0">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setNewTodoTitle('');
+                    setIsAddingTodo(false);
+                  }}
+                  className={`px-2.5 py-1 text-xs rounded-md transition-colors cursor-pointer ${
+                    tasksContrast.isLight ? 'text-zinc-700 hover:text-black hover:bg-black/5' : 'text-white/60 hover:text-white hover:bg-white/10'
+                  }`}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={!newTodoTitle.trim()}
+                  className={`px-3 py-1 rounded-md text-xs font-semibold disabled:opacity-30 transition-all cursor-pointer shadow-sm active:scale-95 ${
+                    tasksContrast.isLight
+                      ? 'bg-zinc-950 text-white hover:bg-black'
+                      : 'bg-white text-black hover:bg-white/90'
+                  }`}
+                >
+                  Add
+                </button>
+              </div>
+            </form>
+          ) : (
+            <button
+              onClick={() => setIsAddingTodo(true)}
+              className={`inline-flex items-center gap-2 text-[13.5px] transition-all hover:translate-x-0.5 cursor-pointer select-none group py-2 px-1 ${
+                tasksContrast.isLight
+                  ? 'text-zinc-800/80 hover:text-black'
+                  : 'text-white/70 hover:text-white'
+              }`}
+            >
+              <span className={`w-5 h-5 rounded-full flex items-center justify-center text-xs transition-colors border ${
+                tasksContrast.isLight 
+                  ? 'border-black/25 text-zinc-800 group-hover:border-black group-hover:bg-black/5' 
+                  : 'border-white/30 text-white/70 group-hover:border-white group-hover:bg-white/10'
+              }`}>
+                ＋
+              </span>
+              <span className="font-normal drop-shadow-sm">
+                {todos.length === 0 ? 'Add your first task' : 'Add task'}
+              </span>
+              <kbd className={`hidden sm:inline-block ml-1 px-1.5 py-0.2 rounded text-[10px] font-mono ${
+                tasksContrast.isLight ? 'bg-black/[0.08] text-zinc-800' : 'bg-white/[0.10] text-white/50'
+              }`}>
+                N
+              </kbd>
+            </button>
+          )}
+        </div>
+
+        {/* ========================================================
+            04 — FILES SECTION
+            Visual media tiles, zero lines cutting wallpaper
+            ======================================================== */}
+        <div ref={filesRef}>
+          {/* Section Heading & Counter */}
+          <div className="flex items-center justify-between mb-3 px-1">
+            <span 
+              className={`text-[11.5px] font-semibold tracking-[0.18em] uppercase ${
+                filesContrast.isLight 
+                  ? 'text-zinc-800/80 drop-shadow-[0_1px_2px_rgba(255,255,255,0.7)]' 
+                  : 'text-white/70 drop-shadow-[0_1px_3px_rgba(0,0,0,0.85)]'
+              }`}
+            >
+              FILES
+            </span>
+            {files.length > 0 && (
+              <span 
+                className={`text-xs font-mono font-medium tracking-wider ${
+                  filesContrast.isLight ? 'text-zinc-700/70' : 'text-white/50'
+                }`}
+              >
+                {files.length}
+              </span>
+            )}
+          </div>
+
+          {/* Loading Files */}
+          {loadingFiles && (
+            <div className={`py-3 text-xs tracking-wider px-1 ${filesContrast.isLight ? 'text-zinc-700/60' : 'text-white/40'}`}>
+              Loading files...
+            </div>
+          )}
+
+          {/* Upload Progress Bar */}
+          {uploadProgress !== null && (
+            <div className={`mb-3 p-3.5 rounded-xl border backdrop-blur-md ${
+              filesContrast.isLight 
+                ? 'bg-white/60 border-black/10 shadow-sm' 
+                : 'bg-black/45 border-white/15'
+            }`}>
+              <div className={`flex items-center justify-between text-xs mb-2 ${
+                filesContrast.isLight ? 'text-zinc-900' : 'text-white/85'
+              }`}>
+                <span className="truncate max-w-[260px]">Uploading {uploadingFileName}...</span>
+                <span className={`font-mono ${filesContrast.isLight ? 'text-zinc-700' : 'text-white/55'}`}>
+                  {uploadProgress}%
+                </span>
+              </div>
+              <div className={`w-full h-1 rounded-full overflow-hidden ${filesContrast.isLight ? 'bg-black/10' : 'bg-white/15'}`}>
+                <div
+                  className={`h-full transition-all duration-150 ease-out rounded-full ${
+                    filesContrast.isLight ? 'bg-zinc-950' : 'bg-white'
+                  }`}
+                  style={{ width: `${uploadProgress}%` }}
+                />
+              </div>
+            </div>
+          )}
+
+          {/* Visual Media Grid: Responsive, zero permanent labels */}
+          {!loadingFiles && files.length > 0 && (
+            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-2.5 sm:gap-3 mb-3">
+              {files.map((file) => (
+                <FileTile
+                  key={file.id}
+                  file={file}
+                  onOpenViewer={(f) => setViewingFile(f)}
+                  onDownload={onDownloadFile}
+                  onRequestDelete={(f) => setDeletingFile(f)}
+                  isLightMode={filesContrast.isLight}
+                />
+              ))}
+            </div>
+          )}
+
+          {/* Empty State */}
+          {!loadingFiles && files.length === 0 && uploadProgress === null && (
+            <div className="py-2 mb-2 px-1">
+              <p className={`text-[13.5px] font-normal ${filesContrast.isLight ? 'text-zinc-700/70' : 'text-white/45'}`}>
+                No files yet
+              </p>
+            </div>
+          )}
+
+          {/* Hidden Native File Input */}
+          <input
+            ref={fileInputRef}
+            type="file"
+            onChange={handleFileChange}
+            className="hidden"
+          />
+
+          {/* Upload File Trigger */}
           <button
-            onClick={() => setIsAddingTodo(true)}
-            className={`inline-flex items-center gap-1.5 text-[13px] sm:text-[13.5px] transition-all hover:translate-x-0.5 cursor-pointer select-none group py-1.5 ${
-              tasksContrast.isLight
+            onClick={handleTriggerUpload}
+            disabled={uploadProgress !== null}
+            className={`inline-flex items-center gap-2 text-[13.5px] disabled:opacity-30 transition-all hover:translate-x-0.5 cursor-pointer select-none group py-2 px-1 mt-1 ${
+              filesContrast.isLight
                 ? 'text-zinc-800/80 hover:text-black'
-                : 'text-white/50 hover:text-white'
+                : 'text-white/70 hover:text-white'
             }`}
           >
-            <span className={`text-base leading-none transition-colors ${
-              tasksContrast.isLight ? 'text-zinc-700/60 group-hover:text-black' : 'text-white/40 group-hover:text-white'
-            }`}>
-              ＋
+            {uploadProgress !== null ? (
+              <Loader2 className={`w-4 h-4 animate-spin ${filesContrast.isLight ? 'text-zinc-800' : 'text-white/70'}`} />
+            ) : (
+              <span className={`w-5 h-5 rounded-full flex items-center justify-center text-xs transition-colors border ${
+                filesContrast.isLight 
+                  ? 'border-black/25 text-zinc-800 group-hover:border-black group-hover:bg-black/5' 
+                  : 'border-white/30 text-white/70 group-hover:border-white group-hover:bg-white/10'
+              }`}>
+                ＋
+              </span>
+            )}
+            <span className="font-normal drop-shadow-sm">
+              {files.length === 0 ? 'Upload your first file' : 'Upload file'}
             </span>
-            <span className="font-normal">
-              {todos.length === 0 ? 'Add your first task' : 'Add task'}
-            </span>
-            <kbd className={`hidden sm:inline-block ml-1 px-1 py-0.2 rounded text-[10px] font-mono ${
-              tasksContrast.isLight ? 'bg-black/[0.08] text-zinc-800' : 'bg-white/[0.07] text-white/40'
+            <kbd className={`hidden sm:inline-block ml-1 px-1.5 py-0.2 rounded text-[10px] font-mono ${
+              filesContrast.isLight ? 'bg-black/[0.08] text-zinc-800' : 'bg-white/[0.10] text-white/50'
             }`}>
-              N
+              O
             </kbd>
           </button>
-        )}
-      </div>
-
-      {/* ========================================================
-          03 — FILES SECTION (Local Adaptive Contrast)
-          Responsive compact visual grid, zero permanent labels
-          ======================================================== */}
-      <div ref={filesRef} className="mt-12 sm:mt-14 transition-colors duration-200">
-        {/* Section Header */}
-        <div className="flex items-center justify-between">
-          <span 
-            className={`text-[11.5px] font-semibold tracking-[0.16em] uppercase transition-colors duration-200 ${
-              filesContrast.isLight ? 'text-zinc-800/75' : 'text-white/50'
-            }`}
-          >
-            FILES
-          </span>
-          <span 
-            className={`text-[12px] font-medium tracking-wider font-mono transition-colors duration-200 ${
-              filesContrast.isLight ? 'text-zinc-700/65' : 'text-white/40'
-            }`}
-          >
-            {files.length}
-          </span>
         </div>
-
-        {/* Subtle Separator */}
-        <div 
-          className={`w-full h-px mt-2 mb-3.5 transition-colors duration-200 ${
-            filesContrast.isLight ? 'bg-black/[0.12]' : 'bg-white/[0.08]'
-          }`} 
-        />
-
-        {/* Loading Files */}
-        {loadingFiles && (
-          <div className={`py-3 text-xs tracking-wider ${filesContrast.isLight ? 'text-zinc-700/60' : 'text-white/40'}`}>
-            Loading files...
-          </div>
-        )}
-
-        {/* Upload Progress Bar Card */}
-        {uploadProgress !== null && (
-          <div className={`mb-3 p-3.5 rounded-xl border ${
-            filesContrast.isLight 
-              ? 'bg-white/60 border-black/10 shadow-sm' 
-              : 'bg-black/40 border-white/15 backdrop-blur-md'
-          }`}>
-            <div className={`flex items-center justify-between text-xs mb-2 ${
-              filesContrast.isLight ? 'text-zinc-900' : 'text-white/80'
-            }`}>
-              <span className="truncate max-w-[260px]">Uploading {uploadingFileName}...</span>
-              <span className={`font-mono ${filesContrast.isLight ? 'text-zinc-700' : 'text-white/50'}`}>
-                {uploadProgress}%
-              </span>
-            </div>
-            <div className={`w-full h-1 rounded-full overflow-hidden ${filesContrast.isLight ? 'bg-black/10' : 'bg-white/10'}`}>
-              <div
-                className={`h-full transition-all duration-150 ease-out rounded-full ${
-                  filesContrast.isLight ? 'bg-zinc-950' : 'bg-white'
-                }`}
-                style={{ width: `${uploadProgress}%` }}
-              />
-            </div>
-          </div>
-        )}
-
-        {/* Visual Media Grid: Compact, Responsive, Zero Permanent Labels */}
-        {!loadingFiles && files.length > 0 && (
-          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-2.5 sm:gap-3 mb-3">
-            {files.map((file) => (
-              <FileTile
-                key={file.id}
-                file={file}
-                onOpenViewer={(f) => setViewingFile(f)}
-                onDownload={onDownloadFile}
-                onRequestDelete={(f) => setDeletingFile(f)}
-                isLightMode={filesContrast.isLight}
-              />
-            ))}
-          </div>
-        )}
-
-        {/* Empty State */}
-        {!loadingFiles && files.length === 0 && uploadProgress === null && (
-          <div className="py-2 mb-2">
-            <p className={`text-[13.5px] ${filesContrast.isLight ? 'text-zinc-700/65' : 'text-white/40'}`}>
-              No files yet
-            </p>
-          </div>
-        )}
-
-        {/* Hidden Native File Input */}
-        <input
-          ref={fileInputRef}
-          type="file"
-          onChange={handleFileChange}
-          className="hidden"
-        />
-
-        {/* Upload File Trigger */}
-        <button
-          onClick={handleTriggerUpload}
-          disabled={uploadProgress !== null}
-          className={`inline-flex items-center gap-1.5 text-[13px] sm:text-[13.5px] disabled:opacity-30 transition-all hover:translate-x-0.5 cursor-pointer select-none group py-1.5 ${
-            filesContrast.isLight
-              ? 'text-zinc-800/80 hover:text-black'
-              : 'text-white/50 hover:text-white'
-          }`}
-        >
-          {uploadProgress !== null ? (
-            <Loader2 className={`w-3.5 h-3.5 animate-spin mr-1 ${filesContrast.isLight ? 'text-zinc-800' : 'text-white/60'}`} />
-          ) : (
-            <span className={`text-base leading-none transition-colors ${
-              filesContrast.isLight ? 'text-zinc-700/60 group-hover:text-black' : 'text-white/40 group-hover:text-white'
-            }`}>
-              ＋
-            </span>
-          )}
-          <span className="font-normal">
-            {files.length === 0 ? 'Upload your first file' : 'Upload file'}
-          </span>
-          <kbd className={`hidden sm:inline-block ml-1 px-1 py-0.2 rounded text-[10px] font-mono ${
-            filesContrast.isLight ? 'bg-black/[0.08] text-zinc-800' : 'bg-white/[0.07] text-white/40'
-          }`}>
-            O
-          </kbd>
-        </button>
       </div>
 
       {/* ========================================================
-          CONTEXT MENU & MODALS
+          05 — NON-INTRUSIVE BOTTOM FLOATING TOASTS
+          Zero screen-dimming black shrouds!
           ======================================================== */}
-      {/* Context Menu for Task */}
-      {contextMenuPos && (
-        <ContextMenu
-          position={contextMenuPos}
-          onEdit={() => {
-            if (activeTodo) setEditingTodo(activeTodo);
-          }}
-          onDelete={() => {
-            if (activeTodo) setDeletingTodo(activeTodo);
-          }}
-          onClose={() => setContextMenuPos(null)}
-        />
+
+      {/* Undo Task Deletion Toast */}
+      {undoTodo && (
+        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 flex items-center gap-3 px-4 py-2.5 rounded-full bg-black/85 border border-white/20 text-white shadow-2xl backdrop-blur-xl animate-fade-in">
+          <span className="text-xs sm:text-sm font-medium tracking-wide">Task deleted</span>
+          <button
+            onClick={handleUndoDelete}
+            className="text-xs font-semibold text-emerald-400 hover:text-emerald-300 underline underline-offset-2 cursor-pointer transition-colors"
+          >
+            Undo
+          </button>
+        </div>
       )}
 
-      {/* Edit Todo Modal */}
-      <EditTodoModal
-        isOpen={Boolean(editingTodo)}
-        todo={editingTodo}
-        onClose={() => setEditingTodo(null)}
-        onSave={async (todoId, newTitle) => {
-          await onUpdateTodo(block.id, todoId, { title: newTitle });
-          setEditingTodo(null);
-        }}
-      />
+      {/* Non-intrusive File Deletion Confirmation Bar (Wallpaper remains 100% visible) */}
+      {deletingFile && (
+        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 flex items-center gap-3 px-4 py-2.5 rounded-2xl bg-black/85 border border-white/20 text-white shadow-2xl backdrop-blur-xl animate-modal-in max-w-[90vw]">
+          <span className="text-xs sm:text-sm font-normal truncate max-w-[200px]">
+            Delete <span className="font-semibold">{deletingFile.name}</span>?
+          </span>
+          <div className="flex items-center gap-1.5 flex-shrink-0">
+            <button
+              onClick={() => setDeletingFile(null)}
+              className="px-2.5 py-1 rounded-lg text-xs text-white/60 hover:text-white hover:bg-white/10 transition-colors cursor-pointer"
+            >
+              Cancel
+            </button>
+            <button
+              onClick={async () => {
+                const f = deletingFile;
+                setDeletingFile(null);
+                await onDeleteFile(block.id, f);
+              }}
+              className="px-3 py-1 rounded-lg text-xs font-semibold bg-rose-500 hover:bg-rose-600 text-white shadow-sm transition-colors cursor-pointer active:scale-95"
+            >
+              Delete
+            </button>
+          </div>
+        </div>
+      )}
 
-      {/* Delete Todo Confirmation Modal */}
-      <ConfirmModal
-        isOpen={Boolean(deletingTodo)}
-        title="Delete this task?"
-        onClose={() => setDeletingTodo(null)}
-        onConfirm={async () => {
-          if (deletingTodo) {
-            await onDeleteTodo(block.id, deletingTodo.id);
-            setDeletingTodo(null);
-          }
-        }}
-        confirmLabel="Delete"
-        isDanger={true}
-      />
-
-      {/* Delete File Confirmation Modal */}
-      <ConfirmModal
-        isOpen={Boolean(deletingFile)}
-        title="Delete this file?"
-        onClose={() => setDeletingFile(null)}
-        onConfirm={async () => {
-          if (deletingFile) {
-            await onDeleteFile(block.id, deletingFile);
-            setDeletingFile(null);
-          }
-        }}
-        confirmLabel="Delete"
-        isDanger={true}
-      />
-
-      {/* Full-Screen Reusable File Viewer with Next/Prev and Zoom/Pan */}
+      {/* Full-Screen Reusable File Viewer */}
       {viewingFile && (
         <FileViewer
           file={viewingFile}
@@ -653,6 +629,6 @@ export default function BlockView({
           onDownload={onDownloadFile}
         />
       )}
-    </div>
+    </>
   );
 }
