@@ -21,6 +21,9 @@
     "react-dom": "^18.3.1",
     "xlsx": "^0.18.5"
   },
+  "overrides": {
+    "firebase": "$firebase"
+  },
   "devDependencies": {
     "@capacitor/android": "^8.5.3",
     "@capacitor/cli": "^7.6.9",
