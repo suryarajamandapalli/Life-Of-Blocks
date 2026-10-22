@@ -38,6 +38,27 @@ export default function MainScreen({
             const blockTodos = todos.filter(t => t.blockId === block.id);
             const total = blockTodos.length;
             const completed = blockTodos.filter(t => t.completed).length;
+            const percent = total === 0 ? 0 : Math.round((completed / total) * 100);
+
+            const isAllDone = total > 0 && completed === total;
+            const isPartDone = total > 0 && completed > 0 && completed < total;
+            const isNothingDone = total > 0 && completed === 0;
+
+            const barColor = isAllDone
+              ? 'bg-emerald-400 shadow-[0_0_8px_rgba(52,211,153,0.6)]'
+              : isPartDone
+                ? 'bg-amber-400 shadow-[0_0_8px_rgba(251,191,36,0.6)]'
+                : isNothingDone
+                  ? 'bg-rose-500 shadow-[0_0_8px_rgba(244,63,94,0.5)]'
+                  : (isLight ? 'bg-black/20' : 'bg-white/20');
+
+            const textColor = isAllDone
+              ? 'text-emerald-400 font-semibold'
+              : isPartDone
+                ? 'text-amber-300 font-medium'
+                : isNothingDone
+                  ? 'text-rose-400 font-medium'
+                  : (isLight ? 'text-zinc-600' : 'text-white/40');
 
             return (
               <div
@@ -58,13 +79,29 @@ export default function MainScreen({
                   >
                     {block.name}
                   </h3>
-                  <p 
-                    className={`text-xs sm:text-sm font-normal tracking-wider transition-colors ${
-                      isLight ? 'text-zinc-800/70' : 'text-white/50'
-                    }`}
-                  >
-                    {completed} / {total} completed
-                  </p>
+
+                  {/* Progress bar with color code and #/# at the end */}
+                  <div className="flex items-center gap-2.5 mt-2">
+                    <div className={`flex-1 h-1.5 sm:h-2 rounded-full overflow-hidden ${
+                      isLight ? 'bg-black/10' : 'bg-white/10'
+                    }`}>
+                      <div
+                        className={`h-full rounded-full transition-all duration-300 ${barColor}`}
+                        style={{
+                          width: `${
+                            total === 0 
+                              ? 0 
+                              : isNothingDone 
+                                ? 6 
+                                : percent
+                          }%`
+                        }}
+                      />
+                    </div>
+                    <span className={`text-[11.5px] sm:text-xs font-mono tracking-wider flex-shrink-0 ${textColor}`}>
+                      {completed} / {total}
+                    </span>
+                  </div>
                 </div>
 
                 {/* Delete Trigger */}

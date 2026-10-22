@@ -314,7 +314,7 @@ export default function BlockView({
             ======================================================== */}
         <div ref={tasksRef} className="mb-10 sm:mb-12">
           {/* Section Heading & Counter */}
-          <div className="flex items-center justify-between mb-3 px-1">
+          <div className="flex items-center justify-between mb-2 px-1">
             <span 
               className={`text-[11.5px] font-semibold tracking-[0.18em] uppercase ${
                 tasksContrast.isLight 
@@ -327,13 +327,41 @@ export default function BlockView({
             {todos.length > 0 && (
               <span 
                 className={`text-xs font-mono font-medium tracking-wider ${
-                  tasksContrast.isLight ? 'text-zinc-700/70' : 'text-white/50'
+                  completedCount === todos.length && todos.length > 0
+                    ? 'text-emerald-400 font-semibold'
+                    : completedCount > 0
+                      ? 'text-amber-300 font-medium'
+                      : 'text-rose-400 font-medium'
                 }`}
               >
                 {completedCount} / {todos.length}
               </span>
             )}
           </div>
+
+          {/* Color-coded task progress bar (Red if 0, Yellow if partial, Green if all) */}
+          {todos.length > 0 && (
+            <div className={`w-full h-1.5 rounded-full overflow-hidden mb-3.5 ${
+              tasksContrast.isLight ? 'bg-black/10' : 'bg-white/10'
+            }`}>
+              <div 
+                className={`h-full rounded-full transition-all duration-300 ${
+                  completedCount === todos.length && todos.length > 0
+                    ? 'bg-emerald-400 shadow-[0_0_8px_rgba(52,211,153,0.6)]'
+                    : completedCount > 0
+                      ? 'bg-amber-400 shadow-[0_0_8px_rgba(251,191,36,0.6)]'
+                      : 'bg-rose-500 shadow-[0_0_8px_rgba(244,63,94,0.5)]'
+                }`}
+                style={{
+                  width: `${
+                    completedCount === 0
+                      ? 5
+                      : Math.round((completedCount / todos.length) * 100)
+                  }%`
+                }}
+              />
+            </div>
+          )}
 
           {/* Loading Tasks */}
           {loadingTodos && (

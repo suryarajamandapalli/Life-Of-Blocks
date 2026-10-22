@@ -150,6 +150,101 @@ class SoundController {
       // Ignore
     }
   }
+
+  // Soothing, calm ambient chord soundscape with gentle ocean/rain texture
+  playSoothingCalmMusic() {
+    try {
+      this.init();
+      if (!this.ctx) return () => {};
+
+      const now = this.ctx.currentTime;
+      const masterGain = this.ctx.createGain();
+      masterGain.gain.setValueAtTime(0.0001, now);
+      // Gentle fade-in over 1.8 seconds to slight, comfortable volume
+      masterGain.gain.linearRampToValueAtTime(0.24, now + 1.8);
+      masterGain.connect(this.ctx.destination);
+
+      // Harmonious warm major 9th chord (C - E - G - B - D + 528Hz healing Solfeggio)
+      const frequencies = [130.81, 164.81, 196.00, 246.94, 293.66, 528.00];
+      const oscillators = [];
+
+      frequencies.forEach((freq, idx) => {
+        const osc = this.ctx.createOscillator();
+        const gain = this.ctx.createGain();
+        const filter = this.ctx.createBiquadFilter();
+
+        osc.type = idx % 2 === 0 ? 'sine' : 'triangle';
+        osc.frequency.setValueAtTime(freq, now);
+        osc.detune.setValueAtTime((idx - 2.5) * 4, now);
+
+        filter.type = 'lowpass';
+        filter.frequency.setValueAtTime(360 + idx * 75, now);
+
+        const voiceGain = (0.09 / frequencies.length) * (idx === frequencies.length - 1 ? 0.6 : 1);
+        gain.gain.setValueAtTime(voiceGain, now);
+
+        osc.connect(filter);
+        filter.connect(gain);
+        gain.connect(masterGain);
+
+        osc.start(now);
+        oscillators.push(osc);
+      });
+
+      // Subtle breathing ocean/rain texture in background
+      const bufferSize = this.ctx.sampleRate * 3;
+      const noiseBuffer = this.ctx.createBuffer(1, bufferSize, this.ctx.sampleRate);
+      const data = noiseBuffer.getChannelData(0);
+      let lastVal = 0.0;
+      for (let i = 0; i < bufferSize; i++) {
+        const white = Math.random() * 2 - 1;
+        lastVal = (lastVal + 0.03 * white) / 1.03;
+        data[i] = lastVal * 1.5;
+      }
+
+      const noiseSource = this.ctx.createBufferSource();
+      noiseSource.buffer = noiseBuffer;
+      noiseSource.loop = true;
+
+      const noiseFilter = this.ctx.createBiquadFilter();
+      noiseFilter.type = 'lowpass';
+      noiseFilter.frequency.setValueAtTime(340, now);
+
+      const noiseGain = this.ctx.createGain();
+      noiseGain.gain.setValueAtTime(0.045, now);
+
+      noiseSource.connect(noiseFilter);
+      noiseFilter.connect(noiseGain);
+      noiseGain.connect(masterGain);
+      noiseSource.start(now);
+
+      // Return cleanup function with smooth fade-out over 1.6s
+      return () => {
+        try {
+          if (!this.ctx) return;
+          const stopNow = this.ctx.currentTime;
+          masterGain.gain.cancelScheduledValues(stopNow);
+          masterGain.gain.setValueAtTime(masterGain.gain.value, stopNow);
+          masterGain.gain.linearRampToValueAtTime(0.0001, stopNow + 1.6);
+
+          setTimeout(() => {
+            try {
+              oscillators.forEach(o => {
+                o.stop();
+                o.disconnect();
+              });
+              noiseSource.stop();
+              noiseSource.disconnect();
+              masterGain.disconnect();
+            } catch {}
+          }, 1700);
+        } catch {}
+      };
+    } catch (e) {
+      console.warn('Soothing music failed to start:', e);
+      return () => {};
+    }
+  }
 }
 
 export const sound = new SoundController();

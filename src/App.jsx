@@ -32,12 +32,19 @@ import QuickNotesModal from './components/QuickNotesModal';
 import GoogleAuthButton from './components/GoogleAuthButton';
 import WallpaperControls from './components/WallpaperControls';
 import StarredWallpapersModal from './components/StarredWallpapersModal';
+import CalmModeOverlay from './components/CalmModeOverlay';
 
 export default function App() {
   const [blocks, setBlocks] = useState([]);
   const [todos, setTodos] = useState([]);
   const [currentBlockId, setCurrentBlockId] = useState(null);
   const [files, setFiles] = useState([]);
+
+  // 10-Second Calm Mode (triggered on block completion)
+  const [isCalmModeActive, setIsCalmModeActive] = useState(false);
+  const [calmModeBlockName, setCalmModeBlockName] = useState('');
+  const prevCompletionRef = useRef(new Map());
+  const isInitialMountRef = useRef(true);
 
   // Modals & Panels state
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
@@ -182,6 +189,39 @@ export default function App() {
       setFiles([]);
     }
   }, [currentBlockId]);
+
+  const triggerCalmMode = useCallback((name) => {
+    setCalmModeBlockName(name || '');
+    setIsCalmModeActive(true);
+  }, []);
+
+  // Monitor blocks for 100% completion transition (Calm Mode trigger)
+  useEffect(() => {
+    if (blocks.length === 0) return;
+
+    if (isInitialMountRef.current) {
+      blocks.forEach((b) => {
+        const bTodos = todos.filter((t) => t.blockId === b.id);
+        const isDone = bTodos.length > 0 && bTodos.every((t) => t.completed);
+        prevCompletionRef.current.set(b.id, isDone);
+      });
+      isInitialMountRef.current = false;
+      return;
+    }
+
+    blocks.forEach((b) => {
+      const bTodos = todos.filter((t) => t.blockId === b.id);
+      const isDone = bTodos.length > 0 && bTodos.every((t) => t.completed);
+      const wasDone = prevCompletionRef.current.get(b.id);
+
+      // Trigger Calm Mode when transitioning from incomplete to 100% completed
+      if (wasDone === false && isDone === true) {
+        triggerCalmMode(b.name);
+      }
+
+      prevCompletionRef.current.set(b.id, isDone);
+    });
+  }, [todos, blocks, triggerCalmMode]);
 
   // Global Keyboard Navigation
   const isRightShiftDownRef = useRef(false);
@@ -449,6 +489,13 @@ export default function App() {
         onConfirm={handleDeleteBlockConfirm}
         confirmLabel="Delete"
         isDanger={true}
+      />
+
+      {/* 10-Second Calm Mode (4K Video, Ambient Soaking Music & Reflection Prompt) */}
+      <CalmModeOverlay
+        isActive={isCalmModeActive}
+        blockName={calmModeBlockName}
+        onClose={() => setIsCalmModeActive(false)}
       />
     </div>
   );
