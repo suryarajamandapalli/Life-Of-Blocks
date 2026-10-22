@@ -59,7 +59,11 @@ export default function GoogleAuthButton() {
       // If native Google auth encountered an issue or was dismissed, open modal
       setIsModalOpen(true);
       if (err?.message && !err.message.includes('popup-closed')) {
-        setErrorMessage(err.message.replace('Firebase:', '').trim());
+        let msg = err.message.replace('Firebase:', '').trim();
+        if (msg.includes('16') || msg.includes('reauth failed')) {
+          msg = 'Google Auth requires adding the app SHA-1 in Firebase Console. You can also sign in or create an account with Email & Password below!';
+        }
+        setErrorMessage(msg);
       }
     } finally {
       setIsSigningIn(false);
