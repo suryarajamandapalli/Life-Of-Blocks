@@ -112,15 +112,15 @@ export default function GoogleAuthButton() {
     );
   }
 
-  // User is LOGGED IN -> Minimal Avatar with emerald online dot
+  // User is LOGGED IN -> Minimal Avatar with small light green circle border
   if (user) {
     return (
       <div className="relative" ref={menuRef}>
         <button
           onClick={() => setIsMenuOpen(prev => !prev)}
-          title={`Signed in as ${user.displayName || user.email}`}
-          aria-label="Google Account"
-          className="relative w-8 h-8 sm:w-9 sm:h-9 rounded-full overflow-hidden border border-white/20 hover:border-white/40 shadow-lg cursor-pointer transition-all active:scale-95 flex items-center justify-center bg-black/40 backdrop-blur-md"
+          title={user.displayName || user.email}
+          aria-label="Account"
+          className="relative w-8 h-8 sm:w-9 sm:h-9 rounded-full overflow-hidden border-2 border-emerald-400/70 hover:border-emerald-300 shadow-md cursor-pointer transition-all active:scale-95 flex items-center justify-center bg-black/40 backdrop-blur-md"
         >
           {user.photoURL ? (
             <img 
@@ -134,58 +134,56 @@ export default function GoogleAuthButton() {
               {(user.displayName || user.email || 'U')[0].toUpperCase()}
             </span>
           )}
-
-          {/* Real-time Cloud Sync Emerald Indicator */}
-          <span className="absolute bottom-0 right-0 w-2.5 h-2.5 rounded-full bg-emerald-400 border-2 border-black/80 shadow-[0_0_8px_#34d399]" />
         </button>
 
-        {/* Minimalist Liquid Glass Account Menu */}
+        {/* Minimalist Liquid Glass Account Popover */}
         {isMenuOpen && (
           <div 
-            className="absolute right-0 mt-2.5 w-60 rounded-2xl border border-white/15 p-3.5 shadow-2xl backdrop-blur-2xl z-50 animate-modal-in select-none"
+            className="absolute right-0 mt-2.5 w-64 rounded-2xl border border-white/15 p-3 shadow-2xl backdrop-blur-2xl z-50 animate-modal-in select-none"
             style={{
               background: 'linear-gradient(135deg, rgba(20, 24, 32, 0.94) 0%, rgba(10, 12, 16, 0.97) 100%)',
               boxShadow: '0 20px 40px -10px rgba(0,0,0,0.8), inset 0 1px 1px rgba(255,255,255,0.15)'
             }}
           >
-            {/* User Info */}
-            <div className="flex items-center gap-3 pb-3 border-b border-white/10">
-              {user.photoURL ? (
-                <img 
-                  src={user.photoURL} 
-                  alt="" 
-                  className="w-9 h-9 rounded-full object-cover border border-white/20"
-                  referrerPolicy="no-referrer"
-                />
-              ) : (
-                <div className="w-9 h-9 rounded-full bg-white/10 flex items-center justify-center text-sm font-semibold text-white">
-                  {(user.displayName || user.email || 'U')[0].toUpperCase()}
+            <div className="flex items-center justify-between gap-2.5">
+              <div className="flex items-center gap-2.5 min-w-0 flex-1">
+                {/* Avatar with green dot only when clicked */}
+                <div className="relative flex-shrink-0">
+                  {user.photoURL ? (
+                    <img 
+                      src={user.photoURL} 
+                      alt="" 
+                      className="w-9 h-9 rounded-full object-cover border border-emerald-400/40"
+                      referrerPolicy="no-referrer"
+                    />
+                  ) : (
+                    <div className="w-9 h-9 rounded-full bg-white/10 flex items-center justify-center text-sm font-semibold text-white border border-emerald-400/40">
+                      {(user.displayName || user.email || 'U')[0].toUpperCase()}
+                    </div>
+                  )}
+                  <span className="absolute -bottom-0.5 -right-0.5 w-2.5 h-2.5 rounded-full bg-emerald-400 border-2 border-black/80 shadow-[0_0_6px_#34d399]" />
                 </div>
-              )}
-              <div className="min-w-0 flex-1">
-                <p className="text-xs font-semibold text-white truncate">
-                  {user.displayName || 'Google User'}
-                </p>
-                <p className="text-[11px] text-white/50 truncate">
-                  {user.email}
-                </p>
+
+                <div className="min-w-0 flex-1">
+                  <p className="text-xs font-semibold text-white truncate">
+                    {user.displayName || 'Google User'}
+                  </p>
+                  <p className="text-[11px] text-white/50 truncate">
+                    {user.email}
+                  </p>
+                </div>
               </div>
-            </div>
 
-            {/* Sync Status Badge */}
-            <div className="flex items-center gap-2 py-2.5 px-2 mt-1 rounded-xl bg-white/[0.03] text-[11px] text-emerald-400 font-medium">
-              <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse shadow-[0_0_6px_#34d399]" />
-              <span className="truncate">Synced with Realtime DB</span>
+              {/* Simple Logout Icon Button (no full text) */}
+              <button
+                onClick={handleSignOut}
+                title="Logout"
+                aria-label="Logout"
+                className="p-2 rounded-xl bg-white/[0.05] hover:bg-rose-500/20 border border-white/10 hover:border-rose-500/30 text-white/60 hover:text-rose-300 transition-all cursor-pointer flex-shrink-0 active:scale-90"
+              >
+                <LogOut className="w-4 h-4" />
+              </button>
             </div>
-
-            {/* Sign Out Button */}
-            <button
-              onClick={handleSignOut}
-              className="w-full mt-2 flex items-center justify-center gap-2 py-2 px-3 rounded-xl bg-rose-500/15 hover:bg-rose-500/25 border border-rose-500/20 text-rose-300 text-xs font-medium transition-all cursor-pointer active:scale-95"
-            >
-              <LogOut className="w-3.5 h-3.5" />
-              <span>Sign Out</span>
-            </button>
           </div>
         )}
       </div>
