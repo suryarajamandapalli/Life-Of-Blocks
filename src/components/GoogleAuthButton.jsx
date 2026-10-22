@@ -175,7 +175,7 @@ export default function GoogleAuthButton() {
             {/* Sync Status Badge */}
             <div className="flex items-center gap-2 py-2.5 px-2 mt-1 rounded-xl bg-white/[0.03] text-[11px] text-emerald-400 font-medium">
               <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse shadow-[0_0_6px_#34d399]" />
-              <span className="truncate">Synced with Firestore</span>
+              <span className="truncate">Synced with Realtime DB</span>
             </div>
 
             {/* Sign Out Button */}

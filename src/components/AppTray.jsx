@@ -171,7 +171,7 @@ export default function AppTray({
               {user ? 'Cloud Synced' : 'Google Sync'}
             </span>
             <span className="text-[10px] text-white/40 font-mono mt-0.5 truncate max-w-[100px]">
-              {user ? 'Firestore Live' : 'Click to Sign In'}
+              {user ? 'RTDB Live' : 'Click to Sign In'}
             </span>
           </button>
         </div>

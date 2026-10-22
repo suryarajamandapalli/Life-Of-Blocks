@@ -1,21 +1,21 @@
-// Storage & Cloud Sync Engine for LIFE OF BLOCKS
-// Blends LocalStorage, IndexedDB, Firebase Firestore & Cloud CDN
-// Provides instant offline UX + real-time multi-device cloud synchronization
+// Storage & Realtime Database Sync Engine for LIFE OF BLOCKS
+// Blends LocalStorage, IndexedDB & Firebase Realtime Database (RTDB)
+// Safe 2-way sync: NEVER deletes local data on refresh; syncs across all devices
 
 import { 
   getCurrentUser, 
   subscribeAuth, 
-  subscribeBlocks, 
-  subscribeTodos, 
-  subscribeFiles,
-  createFirestoreBlock,
-  updateFirestoreBlock,
-  deleteFirestoreBlock,
-  addFirestoreTodo,
-  updateFirestoreTodo,
-  deleteFirestoreTodo,
-  uploadFileToCloud,
-  deleteFileFromCloud
+  subscribeRTDBBlocks, 
+  setRTDBBlock, 
+  removeRTDBBlock, 
+  subscribeRTDBTodos, 
+  setRTDBTodo, 
+  removeRTDBTodo, 
+  subscribeRTDBFiles, 
+  setRTDBFile, 
+  removeRTDBFile, 
+  uploadFileToCloud, 
+  deleteFileFromCloud 
 } from './firebase';
 
 const BLOCKS_KEY = 'lob_blocks';
@@ -23,7 +23,7 @@ const TODOS_KEY = 'lob_todos';
 const FILES_META_KEY = 'lob_files_meta';
 const STORAGE_EVENT = 'lob_storage_update';
 
-function notifyChange(action = 'CHANGE', data = null) {
+function notifyChange() {
   if (typeof window !== 'undefined') {
     window.dispatchEvent(new Event(STORAGE_EVENT));
   }
@@ -82,13 +82,11 @@ export async function getFileBlob(id) {
 }
 
 export async function getFileObjectUrl(id) {
-  // 1. Check if the file metadata has a cloud downloadURL
   const meta = getFilesMeta().find(f => f.id === id);
   if (meta && meta.downloadURL) {
     return meta.downloadURL;
   }
 
-  // 2. Fallback to local IndexedDB blob
   const blob = await getFileBlob(id);
   if (!blob) return null;
   return URL.createObjectURL(blob);
@@ -154,9 +152,9 @@ export function createBlock(name) {
   localStorage.setItem(BLOCKS_KEY, JSON.stringify(blocks));
   notifyChange();
 
-  // Sync to Firestore if authenticated
+  // Realtime Database Sync
   if (user?.uid) {
-    createFirestoreBlock(user.uid, name, newId).catch(e => console.warn('Cloud block sync error:', e));
+    setRTDBBlock(user.uid, newBlock).catch(e => console.warn('RTDB block sync error:', e));
   }
 
   return newBlock.id;
@@ -187,9 +185,9 @@ export async function deleteBlock(blockId) {
 
   notifyChange();
 
-  // 4. Sync delete to Firestore if authenticated
+  // 4. Sync delete to Realtime Database
   if (user?.uid) {
-    deleteFirestoreBlock(user.uid, blockId).catch(e => console.warn('Cloud block delete error:', e));
+    removeRTDBBlock(user.uid, blockId).catch(e => console.warn('RTDB block delete error:', e));
   }
 }
 
@@ -224,9 +222,9 @@ export function addTodo(blockId, title) {
   localStorage.setItem(TODOS_KEY, JSON.stringify(todos));
   notifyChange();
 
-  // Sync to Firestore if authenticated
+  // Realtime Database Sync
   if (user?.uid) {
-    addFirestoreTodo(user.uid, blockId, title, newId).catch(e => console.warn('Cloud todo sync error:', e));
+    setRTDBTodo(user.uid, newTodo).catch(e => console.warn('RTDB todo sync error:', e));
   }
 
   return newTodo;
@@ -234,18 +232,20 @@ export function addTodo(blockId, title) {
 
 export function updateTodo(todoId, updates) {
   const user = getCurrentUser();
+  let updatedTodo = null;
   const todos = getTodos().map(t => {
     if (t.id === todoId) {
-      return { ...t, ...updates, updatedAt: Date.now() };
+      updatedTodo = { ...t, ...updates, updatedAt: Date.now() };
+      return updatedTodo;
     }
     return t;
   });
   localStorage.setItem(TODOS_KEY, JSON.stringify(todos));
   notifyChange();
 
-  // Sync to Firestore if authenticated
-  if (user?.uid) {
-    updateFirestoreTodo(user.uid, todoId, updates).catch(e => console.warn('Cloud todo update error:', e));
+  // Realtime Database Sync
+  if (user?.uid && updatedTodo) {
+    setRTDBTodo(user.uid, updatedTodo).catch(e => console.warn('RTDB todo update error:', e));
   }
 }
 
@@ -255,9 +255,9 @@ export function deleteTodo(todoId) {
   localStorage.setItem(TODOS_KEY, JSON.stringify(todos));
   notifyChange();
 
-  // Sync to Firestore if authenticated
+  // Realtime Database Sync
   if (user?.uid) {
-    deleteFirestoreTodo(user.uid, todoId).catch(e => console.warn('Cloud todo delete error:', e));
+    removeRTDBTodo(user.uid, todoId).catch(e => console.warn('RTDB todo delete error:', e));
   }
 }
 
@@ -279,7 +279,6 @@ export async function uploadFile(blockId, file, onProgress) {
   const user = getCurrentUser();
   const fileId = 'file_' + Date.now() + '_' + Math.random().toString(36).substring(2, 7);
 
-  // Save blob locally in IndexedDB for immediate cache
   await saveFileBlob(fileId, file);
 
   let cloudResult = null;
@@ -290,7 +289,6 @@ export async function uploadFile(blockId, file, onProgress) {
       console.warn('Cloud upload failed, storing locally:', e);
     }
   } else {
-    // Simulated smooth progress for local mode
     if (onProgress) {
       onProgress(30);
       await new Promise(r => setTimeout(r, 60));
@@ -322,7 +320,6 @@ export async function uploadFile(blockId, file, onProgress) {
 
 export async function downloadFile(file) {
   try {
-    // If cloud downloadURL exists, use it
     if (file.downloadURL) {
       const res = await fetch(file.downloadURL);
       const blob = await res.blob();
@@ -337,7 +334,6 @@ export async function downloadFile(file) {
       return;
     }
 
-    // Fallback to local IndexedDB blob
     const blob = await getFileBlob(file.id);
     if (!blob) throw new Error('File blob not found');
     const url = URL.createObjectURL(blob);
@@ -361,80 +357,89 @@ export async function deleteFile(fileId) {
   const allFiles = getFilesMeta();
   const targetFile = allFiles.find(f => f.id === fileId);
 
-  // 1. Delete local blob
   deleteFileBlob(fileId).catch(() => {});
 
-  // 2. Remove metadata locally
   const remainingFiles = allFiles.filter(f => f.id !== fileId);
   localStorage.setItem(FILES_META_KEY, JSON.stringify(remainingFiles));
   notifyChange();
 
-  // 3. Delete from cloud if authenticated
   if (user?.uid && targetFile) {
     deleteFileFromCloud(user.uid, targetFile).catch(e => console.warn('Cloud file delete error:', e));
   }
 }
 
-// ----------------- Realtime Firestore Sync Engine -----------------
+// ----------------- REALTIME DATABASE (RTDB) SYNC ENGINE -----------------
 let activeUnsubscribes = [];
 
-function setupFirestoreSync(uid) {
-  // Clear any existing listeners
+function setupRTDBSync(uid) {
   activeUnsubscribes.forEach(unsub => unsub());
   activeUnsubscribes = [];
 
   if (!uid) return;
 
-  // 1. Listen to Blocks from Firestore
-  const unsubBlocks = subscribeBlocks(uid, (cloudBlocks) => {
-    if (!cloudBlocks) return;
-    localStorage.setItem(BLOCKS_KEY, JSON.stringify(cloudBlocks));
-    notifyChange('SYNC_BLOCKS', cloudBlocks);
+  // 1. Listen to Blocks from Realtime Database
+  const unsubBlocks = subscribeRTDBBlocks(uid, (cloudBlocks) => {
+    const localBlocks = getBlocks();
+
+    if (cloudBlocks && cloudBlocks.length > 0) {
+      // Merge cloud and local blocks safely without deleting anything
+      const map = new Map();
+      localBlocks.forEach(b => map.set(b.id, b));
+      cloudBlocks.forEach(b => map.set(b.id, { ...(map.get(b.id) || {}), ...b }));
+
+      const merged = Array.from(map.values()).sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+      localStorage.setItem(BLOCKS_KEY, JSON.stringify(merged));
+      notifyChange();
+    } else if (localBlocks.length > 0) {
+      // RTDB has no blocks yet, but user has local blocks: PUSH local blocks to RTDB!
+      localBlocks.forEach(b => setRTDBBlock(uid, b));
+    }
   });
   activeUnsubscribes.push(unsubBlocks);
 
-  // 2. Listen to Todos from Firestore
-  const unsubTodos = subscribeTodos(uid, (cloudTodos) => {
-    if (!cloudTodos) return;
-    localStorage.setItem(TODOS_KEY, JSON.stringify(cloudTodos));
-    notifyChange('SYNC_TODOS', cloudTodos);
+  // 2. Listen to Todos from Realtime Database
+  const unsubTodos = subscribeRTDBTodos(uid, (cloudTodos) => {
+    const localTodos = getTodos();
+
+    if (cloudTodos && cloudTodos.length > 0) {
+      const map = new Map();
+      localTodos.forEach(t => map.set(t.id, t));
+      cloudTodos.forEach(t => map.set(t.id, { ...(map.get(t.id) || {}), ...t }));
+
+      const merged = Array.from(map.values()).sort((a, b) => (a.createdAt || 0) - (b.createdAt || 0));
+      localStorage.setItem(TODOS_KEY, JSON.stringify(merged));
+      notifyChange();
+    } else if (localTodos.length > 0) {
+      // RTDB has no todos yet: PUSH local todos to RTDB!
+      localTodos.forEach(t => setRTDBTodo(uid, t));
+    }
   });
   activeUnsubscribes.push(unsubTodos);
 
-  // 3. Listen to Files from Firestore
-  const unsubFiles = subscribeFiles(uid, (cloudFiles) => {
-    if (!cloudFiles) return;
-    localStorage.setItem(FILES_META_KEY, JSON.stringify(cloudFiles));
-    notifyChange('SYNC_FILES', cloudFiles);
+  // 3. Listen to Files metadata from Realtime Database
+  const unsubFiles = subscribeRTDBFiles(uid, (cloudFiles) => {
+    const localFiles = getFilesMeta();
+
+    if (cloudFiles && cloudFiles.length > 0) {
+      const map = new Map();
+      localFiles.forEach(f => map.set(f.id, f));
+      cloudFiles.forEach(f => map.set(f.id, { ...(map.get(f.id) || {}), ...f }));
+
+      const merged = Array.from(map.values()).sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+      localStorage.setItem(FILES_META_KEY, JSON.stringify(merged));
+      notifyChange();
+    } else if (localFiles.length > 0) {
+      localFiles.forEach(f => setRTDBFile(uid, f));
+    }
   });
   activeUnsubscribes.push(unsubFiles);
-
-  // 4. One-time upload of any local blocks/todos created while offline
-  syncLocalToCloud(uid);
 }
 
-async function syncLocalToCloud(uid) {
-  if (!uid) return;
-  try {
-    const localBlocks = getBlocks();
-    for (const b of localBlocks) {
-      await createFirestoreBlock(uid, b.name, b.id).catch(() => {});
-    }
-
-    const localTodos = getTodos();
-    for (const t of localTodos) {
-      await addFirestoreTodo(uid, t.blockId, t.title, t.id).catch(() => {});
-    }
-  } catch (e) {
-    console.debug('Background local-to-cloud upload completed with notices:', e);
-  }
-}
-
-// Listen for Auth changes globally to attach Firestore listeners
+// Listen to Auth State globally to activate RTDB WebSocket listeners
 if (typeof window !== 'undefined') {
   subscribeAuth((user) => {
     if (user?.uid) {
-      setupFirestoreSync(user.uid);
+      setupRTDBSync(user.uid);
     } else {
       activeUnsubscribes.forEach(unsub => unsub());
       activeUnsubscribes = [];

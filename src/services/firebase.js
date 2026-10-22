@@ -1,21 +1,16 @@
 import { initializeApp, getApps, getApp } from 'firebase/app';
 import { 
-  getFirestore, 
-  collection, 
-  doc, 
-  addDoc, 
-  setDoc, 
-  updateDoc, 
-  deleteDoc, 
-  onSnapshot, 
-  query, 
-  orderBy, 
-  getDocs,
-  enableIndexedDbPersistence
-} from 'firebase/firestore';
+  getDatabase, 
+  ref, 
+  onValue, 
+  set, 
+  update, 
+  remove, 
+  get 
+} from 'firebase/database';
 import { 
   getStorage, 
-  ref, 
+  ref as storageRef, 
   uploadBytesResumable, 
   getDownloadURL, 
   deleteObject 
@@ -38,6 +33,7 @@ import { uploadToCloudinary, getCloudinaryCloudName } from './cloudinary';
 export const DEFAULT_FIREBASE_CONFIG = {
   apiKey: "AIzaSyCDD1dWKCybEZH9pQJuFpqxILgopEFFMpM",
   authDomain: "life-of-blocks.firebaseapp.com",
+  databaseURL: "https://life-of-blocks-default-rtdb.firebaseio.com",
   projectId: "life-of-blocks",
   storageBucket: "life-of-blocks.firebasestorage.app",
   messagingSenderId: "853169901922",
@@ -49,6 +45,7 @@ export function getFirebaseConfig() {
   const envConfig = {
     apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
     authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN,
+    databaseURL: import.meta.env.VITE_FIREBASE_DATABASE_URL,
     projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID,
     storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET,
     messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID,
@@ -76,35 +73,24 @@ export function getFirebaseConfig() {
 }
 
 let app = null;
-let db = null;
+let rtdb = null;
 let storage = null;
 let auth = null;
 
 try {
   const activeConfig = getFirebaseConfig();
   app = getApps().length > 0 ? getApp() : initializeApp(activeConfig);
-  db = getFirestore(app);
+  rtdb = getDatabase(app, activeConfig.databaseURL || DEFAULT_FIREBASE_CONFIG.databaseURL);
   storage = getStorage(app);
   auth = getAuth(app);
-
-  // Enable offline persistence in browser environments
-  if (typeof window !== 'undefined' && db) {
-    enableIndexedDbPersistence(db).catch((err) => {
-      if (err.code === 'failed-precondition') {
-        console.debug('Multiple tabs open, Firestore persistence enabled in first tab only');
-      } else if (err.code === 'unimplemented') {
-        console.debug('Browser does not support Firestore persistence');
-      }
-    });
-  }
 } catch (error) {
   console.error('Firebase initialization error:', error);
 }
 
-export { app, db, storage, auth };
+export { app, rtdb, storage, auth };
 
 // ========================================================
-// GOOGLE AUTHENTICATION HELPERS
+// AUTHENTICATION HELPERS
 // ========================================================
 
 export function subscribeAuth(callback) {
@@ -138,9 +124,8 @@ export async function signInWithGoogle() {
   if (!auth) throw new Error('Firebase Auth not initialized');
 
   if (Capacitor.isNativePlatform()) {
-    // Native Android / iOS Flow via Capawesome Native SDK
-    // Shows the native Android Google Account picker dialog!
-    // No browser redirect, no sessionStorage issues, zero white screen!
+    // Native Android / iOS Flow:
+    // Opens the native Google Account chooser bottom-sheet!
     const result = await FirebaseAuthentication.signInWithGoogle();
     const idToken = result.credential?.idToken;
     if (idToken) {
@@ -150,7 +135,7 @@ export async function signInWithGoogle() {
     }
     return result.user;
   } else {
-    // Web environment: Standard Firebase Google popup
+    // Web: Standard Google popup
     const provider = new GoogleAuthProvider();
     provider.setCustomParameters({ prompt: 'select_account' });
     const userCredential = await signInWithPopup(auth, provider);
@@ -184,190 +169,133 @@ export function getCurrentUser() {
 }
 
 // ========================================================
-// FIRESTORE REAL-TIME SYNC: BLOCKS
+// REALTIME DATABASE (RTDB) SYNC: BLOCKS
+// Path: users/{uid}/blocks
 // ========================================================
 
-/**
- * Subscribe to all Blocks for a user in Firestore
- * Collection: users/{uid}/blocks
- */
-export function subscribeBlocks(uid, callback) {
-  if (!db || !uid) return () => {};
-  const blocksRef = collection(db, 'users', uid, 'blocks');
-  const q = query(blocksRef, orderBy('createdAt', 'desc'));
+export function subscribeRTDBBlocks(uid, callback) {
+  if (!rtdb || !uid) return () => {};
+  const blocksRef = ref(rtdb, `users/${uid}/blocks`);
 
-  return onSnapshot(q, (snapshot) => {
-    const blocks = snapshot.docs.map(docSnap => ({
-      id: docSnap.id,
-      ...docSnap.data()
-    }));
-    callback(blocks);
+  return onValue(blocksRef, (snapshot) => {
+    const val = snapshot.val();
+    if (val) {
+      const blocksArray = Array.isArray(val)
+        ? val.filter(Boolean)
+        : Object.keys(val).map(key => ({ id: key, ...val[key] }));
+      callback(blocksArray);
+    } else {
+      callback(null);
+    }
   }, (err) => {
-    console.warn('Blocks query fallback:', err);
-    return onSnapshot(blocksRef, (fallbackSnap) => {
-      const blocks = fallbackSnap.docs.map(docSnap => ({
-        id: docSnap.id,
-        ...docSnap.data()
-      })).sort((a, b) => {
-        const timeA = a.createdAt?.toMillis?.() || a.createdAt || 0;
-        const timeB = b.createdAt?.toMillis?.() || b.createdAt || 0;
-        return timeB - timeA;
-      });
-      callback(blocks);
-    });
+    console.warn('RTDB blocks listen error:', err);
   });
 }
 
-export async function createFirestoreBlock(uid, name, initialId) {
-  if (!db || !uid) throw new Error('Database not initialized');
-  const blocksRef = collection(db, 'users', uid, 'blocks');
-  
-  const blockData = {
-    name: name.trim(),
-    createdAt: Date.now(),
-    updatedAt: Date.now(),
-    completedTodos: 0,
-    totalTodos: 0
-  };
-
-  if (initialId) {
-    const blockDoc = doc(blocksRef, initialId);
-    await setDoc(blockDoc, blockData);
-    return initialId;
-  } else {
-    const newDoc = await addDoc(blocksRef, blockData);
-    return newDoc.id;
-  }
+export async function setRTDBBlock(uid, block) {
+  if (!rtdb || !uid || !block?.id) return;
+  const blockRef = ref(rtdb, `users/${uid}/blocks/${block.id}`);
+  return set(blockRef, block);
 }
 
-export async function updateFirestoreBlock(uid, blockId, updates) {
-  if (!db || !uid || !blockId) return;
-  const blockRef = doc(db, 'users', uid, 'blocks', blockId);
-  return updateDoc(blockRef, {
-    ...updates,
-    updatedAt: Date.now()
-  });
-}
+export async function removeRTDBBlock(uid, blockId) {
+  if (!rtdb || !uid || !blockId) return;
+  const blockRef = ref(rtdb, `users/${uid}/blocks/${blockId}`);
+  await remove(blockRef).catch(() => {});
 
-export async function deleteFirestoreBlock(uid, blockId) {
-  if (!db || !uid || !blockId) return;
-
-  // 1. Delete all todos under this block
+  // Remove corresponding todos
   try {
-    const todosRef = collection(db, 'users', uid, 'todos');
-    const todosSnap = await getDocs(todosRef);
-    const deleteBatch = todosSnap.docs
-      .filter(d => d.data().blockId === blockId)
-      .map(d => deleteDoc(d.ref));
-    await Promise.all(deleteBatch);
+    const todosRef = ref(rtdb, `users/${uid}/todos`);
+    const snap = await get(todosRef);
+    if (snap.exists()) {
+      const val = snap.val() || {};
+      for (const [key, t] of Object.entries(val)) {
+        if (t && t.blockId === blockId) {
+          await remove(ref(rtdb, `users/${uid}/todos/${key}`)).catch(() => {});
+        }
+      }
+    }
   } catch (e) {
-    console.warn('Error deleting associated todos:', e);
+    console.warn('Error deleting sub todos in RTDB:', e);
   }
-
-  // 2. Delete all files metadata under this block
-  try {
-    const filesRef = collection(db, 'users', uid, 'files');
-    const filesSnap = await getDocs(filesRef);
-    const deleteFilesBatch = filesSnap.docs
-      .filter(d => d.data().blockId === blockId)
-      .map(d => deleteDoc(d.ref));
-    await Promise.all(deleteFilesBatch);
-  } catch (e) {
-    console.warn('Error deleting associated files:', e);
-  }
-
-  // 3. Delete block doc
-  const blockRef = doc(db, 'users', uid, 'blocks', blockId);
-  await deleteDoc(blockRef);
 }
 
 // ========================================================
-// FIRESTORE REAL-TIME SYNC: TODOS
+// REALTIME DATABASE (RTDB) SYNC: TODOS
+// Path: users/{uid}/todos
 // ========================================================
 
-/**
- * Subscribe to all Todos for a user across all blocks
- * Collection: users/{uid}/todos
- */
-export function subscribeTodos(uid, callback) {
-  if (!db || !uid) return () => {};
-  const todosRef = collection(db, 'users', uid, 'todos');
+export function subscribeRTDBTodos(uid, callback) {
+  if (!rtdb || !uid) return () => {};
+  const todosRef = ref(rtdb, `users/${uid}/todos`);
 
-  return onSnapshot(todosRef, (snapshot) => {
-    const todos = snapshot.docs.map(docSnap => ({
-      id: docSnap.id,
-      ...docSnap.data()
-    })).sort((a, b) => (a.createdAt || 0) - (b.createdAt || 0));
-    callback(todos);
+  return onValue(todosRef, (snapshot) => {
+    const val = snapshot.val();
+    if (val) {
+      const todosArray = Array.isArray(val)
+        ? val.filter(Boolean)
+        : Object.keys(val).map(key => ({ id: key, ...val[key] }));
+      callback(todosArray);
+    } else {
+      callback(null);
+    }
   }, (err) => {
-    console.error('Todos listener error:', err);
+    console.warn('RTDB todos listen error:', err);
   });
 }
 
-export async function addFirestoreTodo(uid, blockId, title, initialId) {
-  if (!db || !uid || !blockId) throw new Error('Database not initialized');
-  const todosRef = collection(db, 'users', uid, 'todos');
-  
-  const todoData = {
-    blockId,
-    title: title.trim(),
-    completed: false,
-    createdAt: Date.now(),
-    updatedAt: Date.now()
-  };
-
-  if (initialId) {
-    const todoDoc = doc(todosRef, initialId);
-    await setDoc(todoDoc, todoData);
-    return { id: initialId, ...todoData };
-  } else {
-    const newDoc = await addDoc(todosRef, todoData);
-    return { id: newDoc.id, ...todoData };
-  }
+export async function setRTDBTodo(uid, todo) {
+  if (!rtdb || !uid || !todo?.id) return;
+  const todoRef = ref(rtdb, `users/${uid}/todos/${todo.id}`);
+  return set(todoRef, todo);
 }
 
-export async function updateFirestoreTodo(uid, todoId, updates) {
-  if (!db || !uid || !todoId) return;
-  const todoRef = doc(db, 'users', uid, 'todos', todoId);
-  return updateDoc(todoRef, {
-    ...updates,
-    updatedAt: Date.now()
-  });
-}
-
-export async function deleteFirestoreTodo(uid, todoId) {
-  if (!db || !uid || !todoId) return;
-  const todoRef = doc(db, 'users', uid, 'todos', todoId);
-  return deleteDoc(todoRef);
+export async function removeRTDBTodo(uid, todoId) {
+  if (!rtdb || !uid || !todoId) return;
+  const todoRef = ref(rtdb, `users/${uid}/todos/${todoId}`);
+  return remove(todoRef);
 }
 
 // ========================================================
-// FIRESTORE REAL-TIME SYNC & STORAGE: FILES
+// REALTIME DATABASE (RTDB) SYNC: FILES
+// Path: users/{uid}/files
 // ========================================================
 
-/**
- * Subscribe to all Files metadata for a user
- * Collection: users/{uid}/files
- */
-export function subscribeFiles(uid, callback) {
-  if (!db || !uid) return () => {};
-  const filesRef = collection(db, 'users', uid, 'files');
+export function subscribeRTDBFiles(uid, callback) {
+  if (!rtdb || !uid) return () => {};
+  const filesRef = ref(rtdb, `users/${uid}/files`);
 
-  return onSnapshot(filesRef, (snapshot) => {
-    const files = snapshot.docs.map(docSnap => ({
-      id: docSnap.id,
-      ...docSnap.data()
-    })).sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
-    callback(files);
+  return onValue(filesRef, (snapshot) => {
+    const val = snapshot.val();
+    if (val) {
+      const filesArray = Array.isArray(val)
+        ? val.filter(Boolean)
+        : Object.keys(val).map(key => ({ id: key, ...val[key] }));
+      callback(filesArray);
+    } else {
+      callback(null);
+    }
   }, (err) => {
-    console.error('Files listener error:', err);
+    console.warn('RTDB files listen error:', err);
   });
 }
 
-/**
- * Upload file to Cloudinary CDN (or Firebase Storage fallback)
- * and record metadata in Firestore
- */
+export async function setRTDBFile(uid, fileMeta) {
+  if (!rtdb || !uid || !fileMeta?.id) return;
+  const fileRef = ref(rtdb, `users/${uid}/files/${fileMeta.id}`);
+  return set(fileRef, fileMeta);
+}
+
+export async function removeRTDBFile(uid, fileId) {
+  if (!rtdb || !uid || !fileId) return;
+  const fileRef = ref(rtdb, `users/${uid}/files/${fileId}`);
+  return remove(fileRef);
+}
+
+// ========================================================
+// CLOUD STORAGE (Cloudinary CDN + Firebase Storage)
+// ========================================================
+
 export async function uploadFileToCloud(uid, blockId, file, onProgress) {
   if (!uid || !blockId || !file) {
     throw new Error('Missing upload parameters');
@@ -390,12 +318,12 @@ export async function uploadFileToCloud(uid, blockId, file, onProgress) {
     }
   }
 
-  // 2. Fallback to Firebase Cloud Storage CDN (always available with user config)
+  // 2. Fallback to Firebase Cloud Storage CDN
   if (!downloadURL && storage) {
     const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, '_');
     const fileId = 'f_' + Date.now() + '_' + Math.random().toString(36).substring(2, 7);
     storagePath = `users/${uid}/blocks/${blockId}/files/${fileId}_${safeName}`;
-    const fileStorageRef = ref(storage, storagePath);
+    const fileStorageRef = storageRef(storage, storagePath);
 
     const uploadTask = uploadBytesResumable(fileStorageRef, file, {
       contentType: file.type || 'application/octet-stream',
@@ -423,7 +351,7 @@ export async function uploadFileToCloud(uid, blockId, file, onProgress) {
     });
   }
 
-  // 3. Save file metadata in Firestore
+  // 3. Save file metadata in RTDB
   const fileId = 'file_' + Date.now() + '_' + Math.random().toString(36).substring(2, 7);
   const fileMeta = {
     id: fileId,
@@ -437,33 +365,28 @@ export async function uploadFileToCloud(uid, blockId, file, onProgress) {
     createdAt: Date.now()
   };
 
-  if (db && uid) {
-    const fileDoc = doc(db, 'users', uid, 'files', fileId);
-    await setDoc(fileDoc, fileMeta);
+  if (rtdb && uid) {
+    await setRTDBFile(uid, fileMeta);
   }
 
   return fileMeta;
 }
 
-/**
- * Delete a file from Cloud Storage & Firestore
- */
 export async function deleteFileFromCloud(uid, file) {
   if (!uid || !file) return;
 
   // 1. Delete from Firebase Storage if applicable
   if (file.storagePath && file.cdnProvider === 'firebase' && storage) {
     try {
-      const fileStorageRef = ref(storage, file.storagePath);
+      const fileStorageRef = storageRef(storage, file.storagePath);
       await deleteObject(fileStorageRef);
     } catch (e) {
       console.warn('Storage deletion warning:', e);
     }
   }
 
-  // 2. Delete metadata doc from Firestore
-  if (db) {
-    const fileDoc = doc(db, 'users', uid, 'files', file.id);
-    await deleteDoc(fileDoc).catch((e) => console.warn('File doc delete warning:', e));
+  // 2. Delete metadata from RTDB
+  if (rtdb) {
+    await removeRTDBFile(uid, file.id);
   }
 }
