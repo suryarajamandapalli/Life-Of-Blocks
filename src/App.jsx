@@ -41,7 +41,7 @@ export default function App() {
   const [currentBlockId, setCurrentBlockId] = useState(null);
   const [files, setFiles] = useState([]);
 
-  // 10-Second Calm Mode (triggered on block completion)
+  // Zen Mode (triggered on block completion, stays until user chooses to return)
   const [isCalmModeActive, setIsCalmModeActive] = useState(false);
   const [calmModeBlockName, setCalmModeBlockName] = useState('');
   const prevCompletionRef = useRef(new Map());
@@ -550,7 +550,7 @@ export default function App() {
         isDanger={true}
       />
 
-      {/* 10-Second Calm Mode (4K Video, Ambient Soaking Music & Reflection Prompt) */}
+      {/* Zen Mode (GSAP Animated 4K Video, Ambient Soaking Music & "Complete more Blocks in your life" CTA) */}
       <CalmModeOverlay
         isActive={isCalmModeActive}
         blockName={calmModeBlockName}

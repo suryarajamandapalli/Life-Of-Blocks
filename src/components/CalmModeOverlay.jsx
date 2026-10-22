@@ -1,5 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
+import gsap from 'gsap';
 import { sound } from '../services/sound';
+import { ArrowRight } from 'lucide-react';
 
 const CALM_THEMES = [
   {
@@ -29,39 +31,111 @@ const CALM_THEMES = [
 ];
 
 export default function CalmModeOverlay({ isActive, blockName, onClose }) {
-  const [timeLeft, setTimeLeft] = useState(10);
   const [theme, setTheme] = useState(() => CALM_THEMES[0]);
-  const [isClosing, setIsClosing] = useState(false);
   const stopMusicRef = useRef(null);
 
-  // When Calm Mode becomes active, pick a random 4K theme and start the 10s timer & music
+  // GSAP animation refs
+  const containerRef = useRef(null);
+  const videoRef = useRef(null);
+  const orbRef = useRef(null);
+  const titleRef = useRef(null);
+  const subRef = useRef(null);
+  const badgeRef = useRef(null);
+  const ctaRef = useRef(null);
+  const breathTweenRef = useRef(null);
+  const isClosingRef = useRef(false);
+
+  // Entrance and active state management
   useEffect(() => {
     if (!isActive) return;
 
-    // Pick a random ambient theme (Ocean, Nature, Space, Rain)
+    // Pick random ambient theme
     const randomTheme = CALM_THEMES[Math.floor(Math.random() * CALM_THEMES.length)];
     setTheme(randomTheme);
-    setTimeLeft(10);
-    setIsClosing(false);
+    isClosingRef.current = false;
 
     // Start soothing soaking ambient music at slight volume
     const stopFn = sound.playSoothingCalmMusic();
     stopMusicRef.current = stopFn;
 
-    // 10-second countdown timer
-    const interval = setInterval(() => {
-      setTimeLeft((prev) => {
-        if (prev <= 1) {
-          clearInterval(interval);
-          handleExit();
-          return 0;
-        }
-        return prev - 1;
+    // Run GSAP timeline for smooth, organic text and element entrances
+    const ctx = gsap.context(() => {
+      // Pre-set elements
+      gsap.set(containerRef.current, { opacity: 1 });
+      gsap.set(videoRef.current, { opacity: 0, scale: 1.05 });
+      gsap.set(orbRef.current, { opacity: 0, scale: 0.65 });
+      gsap.set([titleRef.current, subRef.current, badgeRef.current, ctaRef.current].filter(Boolean), {
+        opacity: 0,
+        y: 28
       });
-    }, 1000);
+
+      const tl = gsap.timeline();
+
+      // 1. Video backdrop fades in smoothly
+      tl.to(videoRef.current, {
+        opacity: 1,
+        scale: 1.01,
+        duration: 2.2,
+        ease: 'power2.out'
+      });
+
+      // 2. Breathing Orb blossoms
+      tl.to(orbRef.current, {
+        opacity: 1,
+        scale: 1,
+        duration: 2.0,
+        ease: 'power2.out'
+      }, '-=1.6');
+
+      // 3. "Take a deep breath" floats in softly
+      tl.to(titleRef.current, {
+        opacity: 1,
+        y: 0,
+        duration: 1.6,
+        ease: 'power3.out'
+      }, '-=1.2');
+
+      // 4. "You have just finished a block of important tasks in your life."
+      tl.to(subRef.current, {
+        opacity: 1,
+        y: 0,
+        duration: 1.5,
+        ease: 'power3.out'
+      }, '-=1.1');
+
+      // 5. Block Badge
+      if (badgeRef.current) {
+        tl.to(badgeRef.current, {
+          opacity: 1,
+          y: 0,
+          duration: 1.2,
+          ease: 'back.out(1.4)'
+        }, '-=0.9');
+      }
+
+      // 6. "Complete more Blocks in your life" exit CTA
+      tl.to(ctaRef.current, {
+        opacity: 1,
+        y: 0,
+        duration: 1.4,
+        ease: 'power2.out'
+      }, '-=0.7');
+
+      // 7. Continuous serene breathing loop on the orb
+      breathTweenRef.current = gsap.to(orbRef.current, {
+        scale: 1.1,
+        duration: 4.2,
+        repeat: -1,
+        yoyo: true,
+        ease: 'sine.inOut'
+      });
+    }, containerRef);
 
     return () => {
-      clearInterval(interval);
+      ctx.revert();
+      if (breathTweenRef.current) {
+        breathTweenRef.current.kill();
+      }
       if (stopMusicRef.current) {
         stopMusicRef.current();
         stopMusicRef.current = null;
@@ -69,19 +143,31 @@ export default function CalmModeOverlay({ isActive, blockName, onClose }) {
     };
   }, [isActive]);
 
+  // Graceful exit with GSAP fade-out (No 10s timeout — only user triggers exit)
   const handleExit = () => {
-    setIsClosing(true);
+    if (isClosingRef.current) return;
+    isClosingRef.current = true;
+
     if (stopMusicRef.current) {
       stopMusicRef.current();
       stopMusicRef.current = null;
     }
-    setTimeout(() => {
+
+    if (containerRef.current) {
+      gsap.to(containerRef.current, {
+        opacity: 0,
+        duration: 0.75,
+        ease: 'power2.inOut',
+        onComplete: () => {
+          onClose?.();
+        }
+      });
+    } else {
       onClose?.();
-      setIsClosing(false);
-    }, 700);
+    }
   };
 
-  // Keyboard dismiss (Escape or Enter)
+  // Keyboard dismiss (Escape, Space, or Enter)
   useEffect(() => {
     if (!isActive) return;
     const handleKeyDown = (e) => {
@@ -98,14 +184,14 @@ export default function CalmModeOverlay({ isActive, blockName, onClose }) {
 
   return (
     <div 
+      ref={containerRef}
       onClick={handleExit}
-      className={`fixed inset-0 z-50 flex flex-col items-center justify-center cursor-pointer select-none overflow-hidden transition-opacity duration-700 ease-out ${
-        isClosing ? 'opacity-0 pointer-events-none' : 'opacity-100'
-      }`}
+      className="fixed inset-0 z-50 flex flex-col items-center justify-center cursor-pointer select-none overflow-hidden"
       style={{ backgroundColor: '#000' }}
     >
-      {/* 4K Looping Video Background (Ocean, Nature, Space, Rain) */}
+      {/* 4K Looping Ambient Video Background (Ocean, Nature, Space, Rain) */}
       <video
+        ref={videoRef}
         key={theme.id}
         src={theme.videoUrl}
         poster={theme.poster}
@@ -113,45 +199,55 @@ export default function CalmModeOverlay({ isActive, blockName, onClose }) {
         loop
         muted
         playsInline
-        className="absolute inset-0 w-full h-full object-cover scale-105 pointer-events-none transition-transform duration-[12000ms] ease-out"
-        style={{ transform: isClosing ? 'scale(1.08)' : 'scale(1.02)' }}
+        className="absolute inset-0 w-full h-full object-cover pointer-events-none transition-transform duration-[12000ms] ease-out"
       />
 
       {/* Atmospheric Soft Dark Scrim */}
-      <div className="absolute inset-0 bg-gradient-to-b from-black/55 via-black/35 to-black/65 backdrop-blur-[1.5px] pointer-events-none" />
+      <div className="absolute inset-0 bg-gradient-to-b from-black/60 via-black/40 to-black/70 backdrop-blur-[1.5px] pointer-events-none" />
 
-      {/* Main Calm Prompt & Content */}
+      {/* Main Calm Prompt & Content Container */}
       <div 
-        className="relative z-10 flex flex-col items-center text-center px-6 max-w-xl animate-fade-in pointer-events-auto"
+        className="relative z-10 flex flex-col items-center text-center px-6 max-w-xl pointer-events-auto"
         onClick={(e) => {
-          // Allow click anywhere on the backdrop to exit
           e.stopPropagation();
           handleExit();
         }}
       >
-        {/* Soft Glowing Breathing Orb */}
-        <div className="relative w-28 h-28 sm:w-36 sm:h-36 mb-8 sm:mb-10 flex items-center justify-center">
-          <div className="absolute inset-0 rounded-full bg-white/10 blur-2xl animate-pulse" />
-          <div className="w-24 h-24 sm:w-32 sm:h-32 rounded-full border border-white/20 backdrop-blur-md flex items-center justify-center animate-ping-slow">
+        {/* Soft Glowing Breathing Orb with Continuous GSAP Breathing */}
+        <div 
+          ref={orbRef}
+          className="relative w-28 h-28 sm:w-36 sm:h-36 mb-8 sm:mb-10 flex items-center justify-center"
+        >
+          <div className="absolute inset-0 rounded-full bg-white/10 blur-2xl" />
+          <div className="w-24 h-24 sm:w-32 sm:h-32 rounded-full border border-white/20 backdrop-blur-md flex items-center justify-center">
             <div className="w-14 h-14 sm:w-18 sm:h-18 rounded-full bg-gradient-to-tr from-white/25 to-white/10 backdrop-blur-xl shadow-2xl flex items-center justify-center">
-              <span className="w-3 h-3 rounded-full bg-white/90 shadow-[0_0_12px_rgba(255,255,255,0.9)] animate-pulse" />
+              <span className="w-3.5 h-3.5 rounded-full bg-white/95 shadow-[0_0_14px_rgba(255,255,255,0.95)]" />
             </div>
           </div>
         </div>
 
-        {/* Primary Prompt: "Take a deep breath" */}
-        <h2 className="text-3xl sm:text-4xl md:text-5xl font-light tracking-wide text-white drop-shadow-[0_2px_20px_rgba(0,0,0,0.9)] mb-3 sm:mb-4">
+        {/* Primary Prompt: "Take a deep breath" (GSAP Animated) */}
+        <h2 
+          ref={titleRef}
+          className="text-3xl sm:text-4xl md:text-5xl font-light tracking-wide text-white drop-shadow-[0_2px_20px_rgba(0,0,0,0.9)] mb-3 sm:mb-4"
+        >
           Take a deep breath
         </h2>
 
         {/* Secondary Prompt: "You have just finished a block of important tasks in your life." */}
-        <p className="text-[15px] sm:text-lg text-white/90 font-light tracking-wide max-w-md drop-shadow-[0_2px_10px_rgba(0,0,0,0.9)] leading-relaxed">
+        <p 
+          ref={subRef}
+          className="text-[15px] sm:text-lg text-white/90 font-light tracking-wide max-w-md drop-shadow-[0_2px_10px_rgba(0,0,0,0.9)] leading-relaxed"
+        >
           You have just finished a block of important tasks in your life.
         </p>
 
         {/* Completed Block Badge */}
         {blockName && (
-          <div className="mt-5 inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-white/10 border border-white/20 backdrop-blur-md shadow-lg">
+          <div 
+            ref={badgeRef}
+            className="mt-5 inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-white/10 border border-white/20 backdrop-blur-md shadow-lg"
+          >
             <span className="w-2 h-2 rounded-full bg-emerald-400 shadow-[0_0_8px_rgba(52,211,153,0.8)]" />
             <span className="text-xs sm:text-sm font-medium tracking-wider text-white">
               {blockName}
@@ -159,21 +255,24 @@ export default function CalmModeOverlay({ isActive, blockName, onClose }) {
           </div>
         )}
 
-        {/* 10-Second Visual Timer Progress Bar */}
-        <div className="mt-10 sm:mt-12 flex items-center gap-3">
-          <div className="w-36 sm:w-48 h-1 rounded-full bg-white/20 overflow-hidden backdrop-blur-xs">
-            <div 
-              className="h-full bg-white rounded-full transition-all duration-1000 ease-linear shadow-[0_0_8px_rgba(255,255,255,0.8)]"
-              style={{ width: `${(timeLeft / 10) * 100}%` }}
-            />
-          </div>
-          <span className="text-xs font-mono text-white/70">
-            {timeLeft}s
+        {/* Zen Mode Exit Prompt Button (GSAP Animated)
+            "Complete more Blocks in your life" */}
+        <button
+          ref={ctaRef}
+          onClick={(e) => {
+            e.stopPropagation();
+            handleExit();
+          }}
+          className="mt-12 sm:mt-16 group inline-flex items-center gap-2.5 px-6 py-3 rounded-full bg-white/10 hover:bg-white/20 border border-white/25 hover:border-white/40 backdrop-blur-md shadow-2xl transition-all duration-300 hover:scale-105 active:scale-95 cursor-pointer"
+        >
+          <span className="text-sm sm:text-[15px] font-normal tracking-wide text-white drop-shadow-sm">
+            Complete more Blocks in your life
           </span>
-        </div>
+          <ArrowRight className="w-4 h-4 text-white/70 group-hover:text-white group-hover:translate-x-1 transition-all" />
+        </button>
 
-        <p className="mt-4 text-[11px] tracking-widest uppercase text-white/40">
-          Tap anywhere to continue
+        <p className="mt-4 text-[11px] tracking-widest uppercase text-white/35">
+          Tap anywhere or press Esc to return
         </p>
       </div>
     </div>
