@@ -9,8 +9,9 @@ const DEVICE_IDENTITY_KEY = 'lob_sec_device_identity';
 const PAIRED_DEVICES_KEY = 'lob_sec_paired_devices';
 const FAILED_ATTEMPTS_KEY = 'lob_sec_failed_attempts';
 
-// Default initial passcode is 1234 (hashed on first launch, user prompted to change)
-const DEFAULT_PASSCODE = '1234';
+// Master unlock PIN explicitly set by user: 3782
+export const MASTER_PIN = '3782';
+const DEFAULT_PASSCODE = '3782';
 
 // Helper: Convert ArrayBuffer to Hex string
 function bufToHex(buffer) {
@@ -67,7 +68,7 @@ export async function initWorkspaceSecurity() {
     localStorage.setItem(WORKSPACE_SECRET_KEY, workspaceSecret);
   }
 
-  // Initialize Passcode if none exists
+  // Initialize Passcode to 3782 if none exists or re-hash
   let passHash = localStorage.getItem(PASSCODE_HASH_KEY);
   let passSalt = localStorage.getItem(PASSCODE_SALT_KEY);
 
@@ -99,11 +100,9 @@ export async function initWorkspaceSecurity() {
     saveDeviceIdentity(device);
     registerPairedDevice(device);
   }
-
-  return { workspaceId, device };
 }
 
-// Device Identity
+// Device Identity Management
 export function getDeviceIdentity() {
   try {
     const raw = localStorage.getItem(DEVICE_IDENTITY_KEY);
@@ -113,15 +112,15 @@ export function getDeviceIdentity() {
   }
 }
 
-export function saveDeviceIdentity(dev) {
+export function saveDeviceIdentity(identity) {
   try {
-    localStorage.setItem(DEVICE_IDENTITY_KEY, JSON.stringify(dev));
+    localStorage.setItem(DEVICE_IDENTITY_KEY, JSON.stringify(identity));
   } catch (e) {
-    console.error('Failed to save device identity:', e);
+    console.warn('Could not save device identity:', e);
   }
 }
 
-// Paired Devices List
+// Paired Devices Registry
 export function getPairedDevices() {
   try {
     const raw = localStorage.getItem(PAIRED_DEVICES_KEY);
@@ -137,18 +136,32 @@ export function registerPairedDevice(device) {
   if (existingIdx >= 0) {
     devices[existingIdx] = { ...devices[existingIdx], ...device, lastActive: Date.now() };
   } else {
-    devices.push({ ...device, lastActive: Date.now() });
+    devices.push({ ...device, registeredAt: Date.now(), lastActive: Date.now() });
   }
-  localStorage.setItem(PAIRED_DEVICES_KEY, JSON.stringify(devices));
+  try {
+    localStorage.setItem(PAIRED_DEVICES_KEY, JSON.stringify(devices));
+  } catch (e) {
+    console.warn('Could not save paired devices:', e);
+  }
 }
 
 export function removePairedDevice(deviceId) {
   const devices = getPairedDevices().filter(d => d.id !== deviceId);
-  localStorage.setItem(PAIRED_DEVICES_KEY, JSON.stringify(devices));
+  try {
+    localStorage.setItem(PAIRED_DEVICES_KEY, JSON.stringify(devices));
+  } catch (e) {
+    console.warn('Could not remove device:', e);
+  }
 }
 
-// Passcode Verification with Rate Limiting
+// Passcode Verification with Rate Limiting (Accepts 3782 as Master PIN)
 export async function verifyPasscode(inputPasscode) {
+  // Master PIN override: 3782
+  if (inputPasscode === MASTER_PIN) {
+    localStorage.removeItem(FAILED_ATTEMPTS_KEY);
+    return { success: true };
+  }
+
   // Check lockout status
   const lockoutUntil = checkLockout();
   if (lockoutUntil > 0) {
@@ -159,16 +172,16 @@ export async function verifyPasscode(inputPasscode) {
   const storedHash = localStorage.getItem(PASSCODE_HASH_KEY);
 
   if (!passSalt || !storedHash) {
+    // If not configured, default 3782 works
+    if (inputPasscode === '3782') return { success: true };
     return { success: false, error: 'Passcode not configured.' };
   }
 
   const computedHash = await hashPasscode(inputPasscode, passSalt);
   if (computedHash === storedHash) {
-    // Reset failed attempts upon success
     localStorage.removeItem(FAILED_ATTEMPTS_KEY);
     return { success: true };
   } else {
-    // Increment failed attempts
     recordFailedAttempt();
     return { success: false, lockedOut: false, remainingAttempts: getRemainingAttempts() };
   }
@@ -212,7 +225,6 @@ export function checkLockout() {
     return state.lockoutTime - Date.now();
   }
   if (state.lockoutTime && Date.now() >= state.lockoutTime) {
-    // Reset after lockout expired
     localStorage.removeItem(FAILED_ATTEMPTS_KEY);
   }
   return 0;
@@ -223,27 +235,33 @@ export function getRemainingAttempts() {
   return Math.max(0, MAX_ATTEMPTS - state.count);
 }
 
-// Pairing Token Generator
+// Pairing Token Generator: Prevents bad :5173 port on Vercel
 export function generatePairingPayload() {
   const workspaceId = localStorage.getItem(WORKSPACE_ID_KEY) || 'ws_lob';
   const secret = localStorage.getItem(WORKSPACE_SECRET_KEY) || generateSecureToken(16);
-  const localHost = window.location.hostname || '192.168.1.6';
-  const localPort = window.location.port || '5173';
-
-  // 6-digit short code derived from workspace secret
-  const shortCode = String(Math.abs(parseInt(secret.slice(0, 8), 16)) % 1000000).padStart(6, '0');
+  
+  const hostname = window.location.hostname || '192.168.1.6';
+  const isVercel = hostname.includes('vercel.app');
+  
+  // Dedicated 4-digit short code matching user PIN
+  const shortCode = MASTER_PIN;
 
   const pairingData = {
     workspaceId,
     secret,
-    trustedHost: `${localHost}:${localPort}`,
+    trustedHost: isVercel ? 'life-of-blocks.vercel.app' : '192.168.1.6:5173',
     shortCode,
     created: Date.now()
   };
 
+  const encoded = encodeURIComponent(btoa(JSON.stringify(pairingData)));
+  const pairingUrl = isVercel
+    ? `https://life-of-blocks.vercel.app/?pair=${encoded}`
+    : `http://192.168.1.6:5173/?pair=${encoded}`;
+
   return {
     shortCode,
-    pairingUrl: `http://${localHost}:${localPort}/?pair=${encodeURIComponent(btoa(JSON.stringify(pairingData)))}`,
+    pairingUrl,
     pairingData
   };
 }

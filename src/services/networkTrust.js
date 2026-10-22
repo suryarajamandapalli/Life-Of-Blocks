@@ -1,12 +1,12 @@
 // NetworkTrustService for LIFE OF BLOCKS
-// Determines TRUSTED vs UNTRUSTED network presence across Web and Android APK
+// Determines TRUSTED vs UNTRUSTED network presence for Wi-Fi 'Airtel_MSR' across Web and Android APK
 
 import { Network } from '@capacitor/network';
-import { generateSecureToken } from './security';
+import { generateSecureToken, MASTER_PIN } from './security';
 
 const TRUST_STORAGE_KEY = 'lob_trust_endpoint';
 const IS_LOCKED_KEY = 'lob_is_locked';
-const GRACE_PERIOD_MS = 4000; // 4 seconds grace period to tolerate transient network jitter
+const GRACE_PERIOD_MS = 5000;
 
 class NetworkTrustService {
   constructor() {
@@ -15,8 +15,9 @@ class NetworkTrustService {
     this.isNative = false;
     this.untrustedTimer = null;
     this.pollInterval = null;
-    this.trustedEndpoint = this.getStoredEndpoint() || window.location.origin;
+    this.trustedEndpoint = this.getStoredEndpoint() || 'http://192.168.1.6:5173';
     this.isLocked = this.getStoredLockState();
+    this.isSessionUnlocked = false; // Once unlocked with PIN 3782, stays unlocked for this session
 
     this.init();
   }
@@ -40,7 +41,9 @@ class NetworkTrustService {
 
   getStoredLockState() {
     try {
-      return localStorage.getItem(IS_LOCKED_KEY) === 'true';
+      // Default to unlocked on initial load
+      const val = localStorage.getItem(IS_LOCKED_KEY);
+      return val === 'true';
     } catch {
       return false;
     }
@@ -57,12 +60,11 @@ class NetworkTrustService {
   }
 
   async init() {
-    // Check if running on Android Native via Capacitor
+    // 1. Check if running on Android Native via Capacitor
     try {
       const netStatus = await Network.getStatus();
       this.isNative = true;
 
-      // Listen to Android Native network changes
       Network.addListener('networkStatusChange', (status) => {
         this.handleNativeNetworkChange(status);
       });
@@ -72,13 +74,15 @@ class NetworkTrustService {
       this.isNative = false;
     }
 
-    // Always run periodic verification check (every 3.5 seconds)
-    this.checkTrust();
+    // 2. Perform initial check
+    await this.checkTrust();
+
+    // 3. Periodic verification check (every 10s instead of rapid loop)
     this.pollInterval = setInterval(() => {
       this.checkTrust();
-    }, 3500);
+    }, 10000);
 
-    // Also listen to browser online/offline events
+    // 4. Online/offline events
     window.addEventListener('online', () => this.checkTrust());
     window.addEventListener('offline', () => this.handleNetworkLost());
   }
@@ -91,71 +95,71 @@ class NetworkTrustService {
     }
 
     if (status.connectionType === 'cellular') {
-      // Cellular is strictly off trusted Wi-Fi
+      // Cellular data is outside trusted home Wi-Fi Airtel_MSR
       this.handleNetworkLost();
       return;
     }
 
     if (status.connectionType === 'wifi') {
-      // Wi-Fi connected: perform challenge-response verification
       await this.checkTrust();
     }
   }
 
-  // Cryptographic Challenge-Response Verification against local network authority
+  // Verification against local network authority (192.168.1.6:5173 or current host)
   async checkTrust() {
     if (!navigator.onLine) {
       this.handleNetworkLost();
       return;
     }
 
-    try {
-      const nonce = generateSecureToken(16);
-      const targetUrl = `${this.trustedEndpoint}/api/trust/verify`;
+    // If running directly on the laptop on LAN (192.168.1.6 or localhost)
+    const host = window.location.hostname;
+    const isLocalhost = host === 'localhost' || host === '127.0.0.1' || host === '192.168.1.6';
 
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 2500);
+    if (isLocalhost) {
+      this.handleTrustConfirmed();
+      return;
+    }
 
-      const res = await fetch(targetUrl, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          nonce,
-          timestamp: Date.now()
-        }),
-        signal: controller.signal
-      });
+    // Try probing the trusted laptop host on Airtel_MSR LAN
+    const endpointsToTry = [
+      this.trustedEndpoint,
+      'http://192.168.1.6:5173',
+      '/api/trust/verify'
+    ];
 
-      clearTimeout(timeoutId);
+    for (const ep of endpointsToTry) {
+      try {
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 2000);
+        const url = ep.endsWith('/verify') ? ep : `${ep}/api/trust/verify`;
 
-      if (res.ok) {
-        const data = await res.json();
-        if (data && data.trusted) {
-          this.handleTrustConfirmed();
-          return;
-        }
-      }
+        const res = await fetch(url, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ nonce: generateSecureToken(8), timestamp: Date.now() }),
+          signal: controller.signal
+        });
 
-      this.handleNetworkLost();
-    } catch {
-      // If primary endpoint fails, fallback to relative endpoint if different
-      if (this.trustedEndpoint !== window.location.origin) {
-        try {
-          const res = await fetch('/api/trust/verify', { method: 'POST' });
-          if (res.ok) {
+        clearTimeout(timeoutId);
+
+        if (res.ok) {
+          const data = await res.json();
+          if (data && data.trusted) {
             this.handleTrustConfirmed();
             return;
           }
-        } catch {
-          // Both failed
         }
+      } catch {
+        // Continue to next probe
       }
-      this.handleNetworkLost();
     }
+
+    // If all probes fail: device is not on Airtel_MSR Wi-Fi LAN
+    this.handleNetworkLost();
   }
 
   handleTrustConfirmed() {
-    // Clear any pending grace-period timer
     if (this.untrustedTimer) {
       clearTimeout(this.untrustedTimer);
       this.untrustedTimer = null;
@@ -164,16 +168,23 @@ class NetworkTrustService {
     const wasUntrusted = this.status === 'UNTRUSTED';
     this.status = 'TRUSTED';
 
-    // Auto-unlock if device returned to trusted Wi-Fi and was locked due to untrusted network
+    // Auto-unlock when connected to trusted Wi-Fi Airtel_MSR!
     if (this.isLocked && wasUntrusted) {
-      // Keep locked until user passcode or unlock policy
+      this.setStoredLockState(false);
     }
 
     this.notify();
   }
 
   handleNetworkLost() {
-    // Tolerant verification grace period (Section 12)
+    // If user unlocked once with PIN 3782, DO NOT lock them out while active in this session!
+    if (this.isSessionUnlocked) {
+      this.status = 'UNTRUSTED';
+      this.notify();
+      return;
+    }
+
+    // Only lock if not session-unlocked
     if (this.status === 'TRUSTED' && !this.untrustedTimer) {
       this.untrustedTimer = setTimeout(() => {
         this.status = 'UNTRUSTED';
@@ -188,14 +199,16 @@ class NetworkTrustService {
     }
   }
 
-  // Unlock with passcode or user intent
+  // Unlock with PIN (e.g. 3782)
   unlock() {
+    this.isSessionUnlocked = true;
     this.setStoredLockState(false);
     this.notify();
   }
 
   // Lock explicitly
   lock() {
+    this.isSessionUnlocked = false;
     this.setStoredLockState(true);
     this.notify();
   }
@@ -205,11 +218,13 @@ class NetworkTrustService {
   }
 
   isWorkspaceLocked() {
+    // If session unlocked with PIN 3782, never locked
+    if (this.isSessionUnlocked) return false;
     return this.isLocked;
   }
 
   getStatus() {
-    if (this.isLocked) return 'LOCKED';
+    if (this.isWorkspaceLocked()) return 'LOCKED';
     return this.status;
   }
 
@@ -217,7 +232,7 @@ class NetworkTrustService {
     this.listeners.add(callback);
     callback({
       status: this.getStatus(),
-      isLocked: this.isLocked,
+      isLocked: this.isWorkspaceLocked(),
       isTrusted: this.isTrustedNetwork()
     });
 
@@ -229,7 +244,7 @@ class NetworkTrustService {
   notify() {
     const payload = {
       status: this.getStatus(),
-      isLocked: this.isLocked,
+      isLocked: this.isWorkspaceLocked(),
       isTrusted: this.isTrustedNetwork()
     };
     this.listeners.forEach((cb) => {

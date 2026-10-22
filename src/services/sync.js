@@ -1,28 +1,54 @@
 // Realtime Cross-Device Synchronization Engine for LIFE OF BLOCKS
-// Syncs Blocks, Todos, and File metadata across Laptop, Phone, and Android APK
+// Syncs Blocks, Todos, and File metadata across Laptop, Phone, and Android APK on Airtel_MSR Wi-Fi
 
 import { getBlocks, getTodos, getFilesMeta } from './storage';
-
-const SYNC_STATE_KEY = 'lob_sync_last_seq';
 
 class SyncEngine {
   constructor() {
     this.eventSource = null;
     this.listeners = new Set();
-    this.syncEndpoint = window.location.origin;
+    this.syncEndpoint = this.getDefaultEndpoint();
     this.isConnected = false;
     this.reconnectTimer = null;
 
     this.init();
   }
 
+  getDefaultEndpoint() {
+    try {
+      const stored = localStorage.getItem('lob_sync_endpoint');
+      if (stored) return stored;
+    } catch {}
+    
+    // If on localhost or laptop IP
+    if (typeof window !== 'undefined') {
+      const host = window.location.hostname;
+      if (host === 'localhost' || host === '127.0.0.1' || host === '192.168.1.6') {
+        return window.location.origin;
+      }
+    }
+    return 'http://192.168.1.6:5173';
+  }
+
   setEndpoint(url) {
+    if (!url) return;
     this.syncEndpoint = url;
+    try {
+      localStorage.setItem('lob_sync_endpoint', url);
+    } catch {}
     this.reconnect();
   }
 
   init() {
     this.connectEventStream();
+    this.hydrateFromHost();
+
+    // Wire global broadcaster for storage changes
+    if (typeof window !== 'undefined') {
+      window.__lob_broadcast_change = (action, data) => {
+        this.broadcastChange(action, data);
+      };
+    }
   }
 
   connectEventStream() {
@@ -55,12 +81,12 @@ class SyncEngine {
         this.eventSource.close();
         this.eventSource = null;
 
-        // Auto-reconnect after 3s
+        // Auto-reconnect after 4s
         if (!this.reconnectTimer) {
           this.reconnectTimer = setTimeout(() => {
             this.reconnectTimer = null;
             this.connectEventStream();
-          }, 3000);
+          }, 4000);
         }
       };
     } catch {
@@ -76,7 +102,6 @@ class SyncEngine {
   handleIncomingSync(payload) {
     if (!payload || !payload.type) return;
 
-    // Apply change directly to local storage / memory
     if (payload.type === 'FULL_STATE') {
       if (payload.blocks) {
         localStorage.setItem('lob_blocks', JSON.stringify(payload.blocks));
@@ -91,7 +116,6 @@ class SyncEngine {
       return;
     }
 
-    // Incremental update (e.g. TODO_TOGGLE, BLOCK_CREATE, etc.)
     if (payload.type === 'UPDATE') {
       const { blocks, todos, files } = payload;
       if (blocks) localStorage.setItem('lob_blocks', JSON.stringify(blocks));
@@ -122,7 +146,6 @@ class SyncEngine {
         })
       });
     } catch (e) {
-      // Local network hub may be unreachable temporarily; local cache handles offline
       console.debug('Sync broadcast deferred (offline or host unavailable)', e);
     }
   }
@@ -136,8 +159,8 @@ class SyncEngine {
         this.handleIncomingSync({ type: 'FULL_STATE', ...state });
         return true;
       }
-    } catch (e) {
-      console.warn('Could not hydrate state from host:', e);
+    } catch {
+      // Local host offline or not reachable
     }
     return false;
   }

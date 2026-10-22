@@ -79,8 +79,11 @@ export default function App() {
       if (pairParam) {
         const decoded = JSON.parse(atob(pairParam));
         if (decoded.trustedHost) {
-          networkTrust.setStoredEndpoint(`http://${decoded.trustedHost}`);
-          syncEngine.setEndpoint(`http://${decoded.trustedHost}`);
+          const isVercel = decoded.trustedHost.includes('vercel.app');
+          const cleanHost = decoded.trustedHost.replace(/^https?:\/\//, '').replace(/:5173$/, isVercel ? '' : ':5173');
+          const endpoint = isVercel ? `https://${cleanHost}` : `http://${cleanHost}`;
+          networkTrust.setStoredEndpoint(endpoint);
+          syncEngine.setEndpoint(endpoint);
           syncEngine.hydrateFromHost();
         }
         window.history.replaceState({}, document.title, window.location.pathname);

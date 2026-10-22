@@ -6,7 +6,6 @@ import {
   Smartphone, 
   Laptop, 
   KeyRound, 
-  Plus, 
   Trash2, 
   Check, 
   Copy, 
@@ -18,13 +17,14 @@ import {
   getPairedDevices, 
   removePairedDevice, 
   setPasscode, 
-  generatePairingPayload 
+  generatePairingPayload,
+  MASTER_PIN 
 } from '../services/security';
 import { networkTrust } from '../services/networkTrust';
 
 export default function SecuritySettingsModal({ isOpen, onClose }) {
   const [device, setDevice] = useState(getDeviceIdentity);
-  const [deviceName, setDeviceName] = useState(device?.name || 'Raja Laptop');
+  const [deviceName, setDeviceName] = useState(device?.name || 'Windows Laptop');
   const [pairedDevices, setPairedDevices] = useState(getPairedDevices);
   const [trustState, setTrustState] = useState(() => ({
     status: networkTrust.getStatus(),
@@ -97,7 +97,7 @@ export default function SecuritySettingsModal({ isOpen, onClose }) {
       onClick={onClose}
     >
       <div 
-        className="w-full max-w-xl p-6 sm:p-7 rounded-[32px] smoked-modal shadow-2xl border border-white/15 flex flex-col max-h-[88vh] overflow-y-auto"
+        className="w-full max-w-lg p-6 sm:p-7 rounded-[28px] liquid-glass-modal shadow-2xl border border-white/15 flex flex-col max-h-[88vh] overflow-y-auto"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header */}
@@ -105,7 +105,7 @@ export default function SecuritySettingsModal({ isOpen, onClose }) {
           <div className="flex items-center gap-2.5 text-white">
             <ShieldCheck className="w-5 h-5 text-emerald-400" />
             <h3 className="text-base sm:text-lg font-semibold tracking-wide">
-              Security & Trusted Network
+              Trusted Network & Security
             </h3>
           </div>
           <button
@@ -116,35 +116,35 @@ export default function SecuritySettingsModal({ isOpen, onClose }) {
           </button>
         </div>
 
-        {/* 1. Trusted Network Status */}
-        <div className="p-4 rounded-2xl bg-white/[0.04] border border-white/10 mb-5">
+        {/* 1. Trusted Network: Airtel_MSR */}
+        <div className="p-4 rounded-2xl bg-white/[0.04] border border-white/10 mb-4">
           <div className="flex items-center justify-between mb-2">
             <span className="text-xs font-semibold tracking-wider uppercase text-white/60">
-              Trusted Network Status
+              Trusted Wi-Fi
             </span>
             <span className={`flex items-center gap-1.5 text-xs font-mono font-medium ${
               trustState.isTrusted ? 'text-emerald-400' : 'text-rose-400'
             }`}>
-              <span className={`w-2 h-2 rounded-full ${trustState.isTrusted ? 'bg-emerald-400' : 'bg-rose-400'}`} />
-              <span>{trustState.isTrusted ? 'Connected (Trusted)' : 'Untrusted Network'}</span>
+              <span className={`w-2 h-2 rounded-full ${trustState.isTrusted ? 'bg-emerald-400' : 'bg-rose-400 animate-pulse'}`} />
+              <span>{trustState.isTrusted ? 'Airtel_MSR (Connected)' : 'Untrusted Network'}</span>
             </span>
           </div>
           <p className="text-xs text-white/50 leading-relaxed font-mono">
-            Gateway Endpoint: <span className="text-white/80">{networkTrust.trustedEndpoint}</span>
+            Host: <span className="text-white/80">192.168.1.6:5173</span> · Master PIN: <span className="text-emerald-300 font-bold">{MASTER_PIN}</span>
           </p>
         </div>
 
-        {/* 2. Device Pairing & Cross-Device Sync */}
-        <div className="p-4 rounded-2xl bg-white/[0.04] border border-white/10 mb-5">
-          <div className="flex items-center justify-between mb-3">
+        {/* 2. Device Pairing */}
+        <div className="p-4 rounded-2xl bg-white/[0.04] border border-white/10 mb-4">
+          <div className="flex items-center justify-between mb-2">
             <span className="text-xs font-semibold tracking-wider uppercase text-white/60">
-              Pair Phone or Android APK
+              Cross-Device Pairing
             </span>
-            <span className="text-[11px] text-white/40 font-mono">Same Wi-Fi Required</span>
+            <span className="text-[11px] text-emerald-400 font-mono">PIN: {MASTER_PIN}</span>
           </div>
 
           <p className="text-xs text-white/60 mb-3 leading-relaxed">
-            Open this URL on your phone's browser or enter the pairing code in the Android App:
+            Open this link on your phone (connected to Airtel_MSR) to sync tasks across both devices:
           </p>
 
           <div className="flex items-center gap-2 mb-3">
@@ -156,20 +156,13 @@ export default function SecuritySettingsModal({ isOpen, onClose }) {
               className="px-3 py-2 rounded-xl bg-white text-black font-semibold text-xs flex items-center gap-1.5 hover:bg-white/90 active:scale-95 transition-all cursor-pointer shadow-md flex-shrink-0"
             >
               {copiedUrl ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
-              <span>{copiedUrl ? 'Copied!' : 'Copy Link'}</span>
+              <span>{copiedUrl ? 'Copied!' : 'Copy'}</span>
             </button>
-          </div>
-
-          <div className="flex items-center justify-between text-xs bg-white/[0.03] p-2.5 rounded-xl border border-white/5 font-mono">
-            <span className="text-white/50">Pairing Code:</span>
-            <span className="font-bold text-white tracking-widest text-sm bg-white/10 px-2 py-0.5 rounded">
-              {pairingPayload?.shortCode}
-            </span>
           </div>
         </div>
 
-        {/* 3. Paired Devices List */}
-        <div className="p-4 rounded-2xl bg-white/[0.04] border border-white/10 mb-5">
+        {/* 3. Paired Devices */}
+        <div className="p-4 rounded-2xl bg-white/[0.04] border border-white/10">
           <span className="text-xs font-semibold tracking-wider uppercase text-white/60 mb-3 block">
             Paired Devices
           </span>
@@ -209,49 +202,6 @@ export default function SecuritySettingsModal({ isOpen, onClose }) {
               </div>
             ))}
           </div>
-        </div>
-
-        {/* 4. Passcode Management */}
-        <div className="p-4 rounded-2xl bg-white/[0.04] border border-white/10">
-          <span className="text-xs font-semibold tracking-wider uppercase text-white/60 mb-3 block">
-            Change Security Passcode
-          </span>
-
-          <form onSubmit={handleChangePasscode} className="flex flex-col gap-2.5">
-            <div className="grid grid-cols-2 gap-2">
-              <input
-                type="password"
-                maxLength={6}
-                value={newPass}
-                onChange={(e) => setNewPass(e.target.value)}
-                placeholder="New Passcode (4-6 digits)"
-                className="w-full bg-black/40 px-3 py-2 rounded-xl border border-white/10 text-xs text-white placeholder-white/30 focus:border-white/30 focus:outline-none font-mono"
-              />
-              <input
-                type="password"
-                maxLength={6}
-                value={confirmPass}
-                onChange={(e) => setConfirmPass(e.target.value)}
-                placeholder="Confirm Passcode"
-                className="w-full bg-black/40 px-3 py-2 rounded-xl border border-white/10 text-xs text-white placeholder-white/30 focus:border-white/30 focus:outline-none font-mono"
-              />
-            </div>
-
-            <div className="flex items-center justify-between pt-1">
-              {passMsg ? (
-                <span className="text-xs text-emerald-400 font-medium">{passMsg}</span>
-              ) : (
-                <span className="text-[11px] text-white/40 font-mono">Default initial passcode was 1234</span>
-              )}
-              <button
-                type="submit"
-                disabled={!newPass || newPass.length < 4}
-                className="px-4 py-1.5 rounded-xl bg-white text-black text-xs font-semibold hover:bg-white/90 disabled:opacity-30 transition-all cursor-pointer shadow-md"
-              >
-                Update Passcode
-              </button>
-            </div>
-          </form>
         </div>
       </div>
     </div>
