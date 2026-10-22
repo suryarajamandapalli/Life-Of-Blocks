@@ -344,11 +344,11 @@ export default function App() {
         }}
       />
 
-      {/* Gentle Scrim — Preserves Wallpaper Brightness, Color & Clarity */}
+      {/* Gentle Scrim — Maximum Wallpaper Dominance & Clarity */}
       <div 
         className="fixed inset-0 z-0 pointer-events-none" 
         style={{
-          background: 'linear-gradient(to bottom, rgba(0, 0, 0, 0.10) 0%, rgba(0, 0, 0, 0.25) 100%)'
+          background: 'linear-gradient(to bottom, rgba(0, 0, 0, 0.04) 0%, rgba(0, 0, 0, 0.16) 100%)'
         }}
       />
 

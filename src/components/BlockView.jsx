@@ -24,9 +24,14 @@ export default function BlockView({
   onDownloadFile,
   onDeleteFile
 }) {
-  const workspaceRef = useRef(null);
-  const contrast = useAdaptiveContrast(workspaceRef, wallpaper);
-  const isLight = contrast.isLight;
+  // Localized Adaptive Contrast Refs (Evaluates exact screen regions)
+  const headerRef = useRef(null);
+  const tasksRef = useRef(null);
+  const filesRef = useRef(null);
+
+  const headerContrast = useAdaptiveContrast(headerRef, wallpaper);
+  const tasksContrast = useAdaptiveContrast(tasksRef, wallpaper);
+  const filesContrast = useAdaptiveContrast(filesRef, wallpaper);
 
   const [isAddingTodo, setIsAddingTodo] = useState(false);
   const [newTodoTitle, setNewTodoTitle] = useState('');
@@ -268,20 +273,20 @@ export default function BlockView({
 
   return (
     <div 
-      ref={workspaceRef}
-      className="w-[calc(100vw-32px)] sm:w-[min(860px,calc(100vw-64px))] mx-auto pt-[84px] sm:pt-[96px] pb-28 animate-page-in select-none transition-colors duration-300"
+      className="w-[calc(100vw-32px)] sm:w-[min(860px,calc(100vw-64px))] mx-auto pt-[80px] sm:pt-[96px] pb-28 animate-page-in select-none"
     >
       {/* ========================================================
-          03 — HEADER (Back button, 32px Title, 13px Metadata)
+          01 — HEADER (Local Adaptive Contrast)
+          36x36px circular back button, 32px block title, subtle metadata
           ======================================================== */}
-      <div>
-        {/* Back Button: 36x36px circular, adaptive contrast */}
+      <div ref={headerRef} className="transition-colors duration-200">
+        {/* Back Button */}
         <button
           onClick={onBack}
           title="Back to Blocks (Esc)"
           aria-label="Back to Blocks"
           className={`w-9 h-9 rounded-full active:scale-95 transition-all flex items-center justify-center cursor-pointer focus-visible:outline-none shadow-md backdrop-blur-md ${
-            isLight
+            headerContrast.isLight
               ? 'bg-white/60 hover:bg-white/85 border border-black/15 text-zinc-900 hover:text-black focus-visible:ring-1 focus-visible:ring-black/40'
               : 'bg-black/35 hover:bg-black/60 border border-white/15 text-white/80 hover:text-white focus-visible:ring-1 focus-visible:ring-white/40'
           }`}
@@ -289,11 +294,11 @@ export default function BlockView({
           <ArrowLeft className="w-4 h-4 stroke-[2]" />
         </button>
 
-        {/* Title & Metadata with Adaptive Color & Halo */}
+        {/* Title & Metadata */}
         <div className="mt-6">
           <h1 
-            className={`text-[32px] font-semibold tracking-tight leading-tight break-words select-text transition-colors duration-300 ${
-              isLight
+            className={`text-[32px] font-semibold tracking-tight leading-tight break-words select-text transition-colors duration-200 ${
+              headerContrast.isLight
                 ? 'text-zinc-950 drop-shadow-[0_1px_8px_rgba(255,255,255,0.85)]'
                 : 'text-white drop-shadow-[0_2px_10px_rgba(0,0,0,0.85)]'
             }`}
@@ -301,8 +306,8 @@ export default function BlockView({
             {block.name}
           </h1>
           <p 
-            className={`text-[13px] font-normal tracking-wide mt-1 transition-colors duration-300 ${
-              isLight
+            className={`text-[13px] font-normal tracking-wide mt-1 transition-colors duration-200 ${
+              headerContrast.isLight
                 ? 'text-zinc-800/80 drop-shadow-[0_1px_4px_rgba(255,255,255,0.7)]'
                 : 'text-white/60 drop-shadow-[0_1px_4px_rgba(0,0,0,0.8)]'
             }`}
@@ -313,50 +318,45 @@ export default function BlockView({
       </div>
 
       {/* ========================================================
-          16 — SECTION SPACING: Header ↓ 48px to TODO
+          02 — TASKS SECTION (Local Adaptive Contrast)
+          Simple floating rows (○ Task name), zero bulky containers!
           ======================================================== */}
-      <div className="mt-12">
-        {/* TODO Section Header */}
+      <div ref={tasksRef} className="mt-11 sm:mt-12 transition-colors duration-200">
+        {/* Section Header */}
         <div className="flex items-center justify-between">
           <span 
-            className={`text-[12px] font-semibold tracking-[0.14em] uppercase transition-colors duration-300 ${
-              isLight ? 'text-zinc-800/75' : 'text-white/50'
+            className={`text-[11.5px] font-semibold tracking-[0.16em] uppercase transition-colors duration-200 ${
+              tasksContrast.isLight ? 'text-zinc-800/75' : 'text-white/50'
             }`}
           >
             TODO
           </span>
           <span 
-            className={`text-[12px] font-medium tracking-wider font-mono transition-colors duration-300 ${
-              isLight ? 'text-zinc-700/65' : 'text-white/40'
+            className={`text-[12px] font-medium tracking-wider font-mono transition-colors duration-200 ${
+              tasksContrast.isLight ? 'text-zinc-700/65' : 'text-white/40'
             }`}
           >
             {completedCount} / {todos.length}
           </span>
         </div>
 
-        {/* Subtle Separator: ↓ 14px to Task list */}
+        {/* Subtle Separator */}
         <div 
-          className={`w-full h-px mt-2 mb-3.5 transition-colors duration-300 ${
-            isLight ? 'bg-black/[0.12]' : 'bg-white/[0.08]'
+          className={`w-full h-px mt-2 mb-3.5 transition-colors duration-200 ${
+            tasksContrast.isLight ? 'bg-black/[0.12]' : 'bg-white/[0.08]'
           }`} 
         />
 
         {/* Loading State */}
         {loadingTodos && (
-          <div className={`py-4 text-xs tracking-wider ${isLight ? 'text-zinc-700/60' : 'text-white/40'}`}>
+          <div className={`py-3 text-xs tracking-wider ${tasksContrast.isLight ? 'text-zinc-700/60' : 'text-white/40'}`}>
             Loading tasks...
           </div>
         )}
 
-        {/* Task List: ONE Cohesive Container */}
+        {/* Floating Task Rows: Distraction-free, zero heavy container */}
         {!loadingTodos && todos.length > 0 && (
-          <div 
-            className={`rounded-[14px] overflow-hidden mb-3 transition-colors duration-300 ${
-              isLight
-                ? 'bg-white/45 backdrop-blur-xl border border-black/10 divide-y divide-black/[0.07] shadow-lg'
-                : 'smoked-container divide-y divide-white/[0.06]'
-            }`}
-          >
+          <div className="flex flex-col gap-0.5 sm:gap-1 mb-2.5">
             {todos.map((todo) => (
               <TodoItem
                 key={todo.id}
@@ -365,30 +365,32 @@ export default function BlockView({
                 deleteProgress={todo.id === selectedTodoId ? deleteProgress : 0}
                 onSelect={(t) => setSelectedTodoId(t.id)}
                 onToggle={(t) => onToggleTodo(block.id, t.id, !t.completed)}
+                onEdit={(t) => setEditingTodo(t)}
+                onDelete={(t) => setDeletingTodo(t)}
                 onOpenContextMenu={handleOpenContextMenu}
-                isLightMode={isLight}
+                isLightMode={tasksContrast.isLight}
               />
             ))}
           </div>
         )}
 
-        {/* Empty State: No tasks yet */}
+        {/* Empty State */}
         {!loadingTodos && todos.length === 0 && !isAddingTodo && (
-          <div className="py-2.5 mb-2">
-            <p className={`text-[14px] ${isLight ? 'text-zinc-700/65' : 'text-white/40'}`}>
+          <div className="py-2 mb-2">
+            <p className={`text-[13.5px] ${tasksContrast.isLight ? 'text-zinc-700/65' : 'text-white/40'}`}>
               No tasks yet
             </p>
           </div>
         )}
 
-        {/* Inline Add Task Form OR Trigger */}
+        {/* Inline Add Task (Floating pill row) */}
         {isAddingTodo ? (
           <form 
             onSubmit={handleCreateTodo} 
-            className={`flex items-center gap-2 px-4 py-2.5 rounded-[14px] transition-all ${
-              isLight
-                ? 'bg-white/60 border border-black/15 shadow-sm'
-                : 'smoked-container border border-white/[0.14]'
+            className={`flex items-center gap-2 px-3.5 py-2 rounded-xl transition-all ${
+              tasksContrast.isLight
+                ? 'bg-black/[0.05] border border-black/15 shadow-sm'
+                : 'bg-white/[0.08] border border-white/15 shadow-sm'
             }`}
           >
             <input
@@ -398,9 +400,9 @@ export default function BlockView({
               onChange={(e) => setNewTodoTitle(e.target.value)}
               onKeyDown={handleTodoInputKeyDown}
               placeholder="What needs to be done?"
-              className={`flex-1 bg-transparent text-[15px] focus:outline-none ${
-                isLight
-                  ? 'text-zinc-950 placeholder-zinc-600/50'
+              className={`flex-1 bg-transparent text-[14.5px] sm:text-[15px] focus:outline-none ${
+                tasksContrast.isLight
+                  ? 'text-zinc-950 placeholder-zinc-700/50'
                   : 'text-white placeholder-white/35'
               }`}
               maxLength={140}
@@ -413,7 +415,7 @@ export default function BlockView({
                   setIsAddingTodo(false);
                 }}
                 className={`px-2.5 py-1 text-xs transition-colors cursor-pointer ${
-                  isLight ? 'text-zinc-700 hover:text-black' : 'text-white/45 hover:text-white'
+                  tasksContrast.isLight ? 'text-zinc-700 hover:text-black' : 'text-white/45 hover:text-white'
                 }`}
               >
                 Cancel
@@ -421,8 +423,8 @@ export default function BlockView({
               <button
                 type="submit"
                 disabled={!newTodoTitle.trim()}
-                className={`px-3.5 py-1 rounded-lg text-xs font-semibold disabled:opacity-30 transition-all cursor-pointer shadow-sm active:scale-95 ${
-                  isLight
+                className={`px-3 py-1 rounded-lg text-xs font-semibold disabled:opacity-30 transition-all cursor-pointer shadow-sm active:scale-95 ${
+                  tasksContrast.isLight
                     ? 'bg-zinc-900 text-white hover:bg-black'
                     : 'bg-white text-black hover:bg-white/90'
                 }`}
@@ -434,14 +436,14 @@ export default function BlockView({
         ) : (
           <button
             onClick={() => setIsAddingTodo(true)}
-            className={`inline-flex items-center gap-1.5 text-[13px] sm:text-[14px] transition-all hover:translate-x-0.5 cursor-pointer select-none group py-1 ${
-              isLight
+            className={`inline-flex items-center gap-1.5 text-[13px] sm:text-[13.5px] transition-all hover:translate-x-0.5 cursor-pointer select-none group py-1.5 ${
+              tasksContrast.isLight
                 ? 'text-zinc-800/80 hover:text-black'
                 : 'text-white/50 hover:text-white'
             }`}
           >
             <span className={`text-base leading-none transition-colors ${
-              isLight ? 'text-zinc-700/60 group-hover:text-black' : 'text-white/40 group-hover:text-white'
+              tasksContrast.isLight ? 'text-zinc-700/60 group-hover:text-black' : 'text-white/40 group-hover:text-white'
             }`}>
               ＋
             </span>
@@ -449,7 +451,7 @@ export default function BlockView({
               {todos.length === 0 ? 'Add your first task' : 'Add task'}
             </span>
             <kbd className={`hidden sm:inline-block ml-1 px-1 py-0.2 rounded text-[10px] font-mono ${
-              isLight ? 'bg-black/[0.08] text-zinc-800' : 'bg-white/[0.07] text-white/40'
+              tasksContrast.isLight ? 'bg-black/[0.08] text-zinc-800' : 'bg-white/[0.07] text-white/40'
             }`}>
               N
             </kbd>
@@ -458,60 +460,61 @@ export default function BlockView({
       </div>
 
       {/* ========================================================
-          16 — SECTION SPACING: Add task ↓ 56px to FILES
+          03 — FILES SECTION (Local Adaptive Contrast)
+          Responsive compact visual grid, zero permanent labels
           ======================================================== */}
-      <div className="mt-14">
-        {/* FILES Section Header */}
+      <div ref={filesRef} className="mt-12 sm:mt-14 transition-colors duration-200">
+        {/* Section Header */}
         <div className="flex items-center justify-between">
           <span 
-            className={`text-[12px] font-semibold tracking-[0.14em] uppercase transition-colors duration-300 ${
-              isLight ? 'text-zinc-800/75' : 'text-white/50'
+            className={`text-[11.5px] font-semibold tracking-[0.16em] uppercase transition-colors duration-200 ${
+              filesContrast.isLight ? 'text-zinc-800/75' : 'text-white/50'
             }`}
           >
             FILES
           </span>
           <span 
-            className={`text-[12px] font-medium tracking-wider font-mono transition-colors duration-300 ${
-              isLight ? 'text-zinc-700/65' : 'text-white/40'
+            className={`text-[12px] font-medium tracking-wider font-mono transition-colors duration-200 ${
+              filesContrast.isLight ? 'text-zinc-700/65' : 'text-white/40'
             }`}
           >
             {files.length}
           </span>
         </div>
 
-        {/* Subtle Separator: ↓ 14px to File list */}
+        {/* Subtle Separator */}
         <div 
-          className={`w-full h-px mt-2 mb-3.5 transition-colors duration-300 ${
-            isLight ? 'bg-black/[0.12]' : 'bg-white/[0.08]'
+          className={`w-full h-px mt-2 mb-3.5 transition-colors duration-200 ${
+            filesContrast.isLight ? 'bg-black/[0.12]' : 'bg-white/[0.08]'
           }`} 
         />
 
         {/* Loading Files */}
         {loadingFiles && (
-          <div className={`py-4 text-xs tracking-wider ${isLight ? 'text-zinc-700/60' : 'text-white/40'}`}>
+          <div className={`py-3 text-xs tracking-wider ${filesContrast.isLight ? 'text-zinc-700/60' : 'text-white/40'}`}>
             Loading files...
           </div>
         )}
 
         {/* Upload Progress Bar Card */}
         {uploadProgress !== null && (
-          <div className={`mb-3 p-4 rounded-[14px] border ${
-            isLight 
+          <div className={`mb-3 p-3.5 rounded-xl border ${
+            filesContrast.isLight 
               ? 'bg-white/60 border-black/10 shadow-sm' 
-              : 'smoked-container border-white/15'
+              : 'bg-black/40 border-white/15 backdrop-blur-md'
           }`}>
             <div className={`flex items-center justify-between text-xs mb-2 ${
-              isLight ? 'text-zinc-900' : 'text-white/80'
+              filesContrast.isLight ? 'text-zinc-900' : 'text-white/80'
             }`}>
               <span className="truncate max-w-[260px]">Uploading {uploadingFileName}...</span>
-              <span className={`font-mono ${isLight ? 'text-zinc-700' : 'text-white/50'}`}>
+              <span className={`font-mono ${filesContrast.isLight ? 'text-zinc-700' : 'text-white/50'}`}>
                 {uploadProgress}%
               </span>
             </div>
-            <div className={`w-full h-1 rounded-full overflow-hidden ${isLight ? 'bg-black/10' : 'bg-white/10'}`}>
+            <div className={`w-full h-1 rounded-full overflow-hidden ${filesContrast.isLight ? 'bg-black/10' : 'bg-white/10'}`}>
               <div
                 className={`h-full transition-all duration-150 ease-out rounded-full ${
-                  isLight ? 'bg-zinc-950' : 'bg-white'
+                  filesContrast.isLight ? 'bg-zinc-950' : 'bg-white'
                 }`}
                 style={{ width: `${uploadProgress}%` }}
               />
@@ -519,9 +522,9 @@ export default function BlockView({
           </div>
         )}
 
-        {/* File Visual Grid (Zero permanent labels, pure media tiles) */}
+        {/* Visual Media Grid: Compact, Responsive, Zero Permanent Labels */}
         {!loadingFiles && files.length > 0 && (
-          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3 sm:gap-3.5 mb-3">
+          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-2.5 sm:gap-3 mb-3">
             {files.map((file) => (
               <FileTile
                 key={file.id}
@@ -529,16 +532,16 @@ export default function BlockView({
                 onOpenViewer={(f) => setViewingFile(f)}
                 onDownload={onDownloadFile}
                 onRequestDelete={(f) => setDeletingFile(f)}
-                isLightMode={isLight}
+                isLightMode={filesContrast.isLight}
               />
             ))}
           </div>
         )}
 
-        {/* Empty State: No files yet */}
+        {/* Empty State */}
         {!loadingFiles && files.length === 0 && uploadProgress === null && (
-          <div className="py-2.5 mb-2">
-            <p className={`text-[14px] ${isLight ? 'text-zinc-700/65' : 'text-white/40'}`}>
+          <div className="py-2 mb-2">
+            <p className={`text-[13.5px] ${filesContrast.isLight ? 'text-zinc-700/65' : 'text-white/40'}`}>
               No files yet
             </p>
           </div>
@@ -552,21 +555,21 @@ export default function BlockView({
           className="hidden"
         />
 
-        {/* Upload File Trigger Button */}
+        {/* Upload File Trigger */}
         <button
           onClick={handleTriggerUpload}
           disabled={uploadProgress !== null}
-          className={`inline-flex items-center gap-1.5 text-[13px] sm:text-[14px] disabled:opacity-30 transition-all hover:translate-x-0.5 cursor-pointer select-none group py-1 ${
-            isLight
+          className={`inline-flex items-center gap-1.5 text-[13px] sm:text-[13.5px] disabled:opacity-30 transition-all hover:translate-x-0.5 cursor-pointer select-none group py-1.5 ${
+            filesContrast.isLight
               ? 'text-zinc-800/80 hover:text-black'
               : 'text-white/50 hover:text-white'
           }`}
         >
           {uploadProgress !== null ? (
-            <Loader2 className={`w-3.5 h-3.5 animate-spin mr-1 ${isLight ? 'text-zinc-800' : 'text-white/60'}`} />
+            <Loader2 className={`w-3.5 h-3.5 animate-spin mr-1 ${filesContrast.isLight ? 'text-zinc-800' : 'text-white/60'}`} />
           ) : (
             <span className={`text-base leading-none transition-colors ${
-              isLight ? 'text-zinc-700/60 group-hover:text-black' : 'text-white/40 group-hover:text-white'
+              filesContrast.isLight ? 'text-zinc-700/60 group-hover:text-black' : 'text-white/40 group-hover:text-white'
             }`}>
               ＋
             </span>
@@ -575,7 +578,7 @@ export default function BlockView({
             {files.length === 0 ? 'Upload your first file' : 'Upload file'}
           </span>
           <kbd className={`hidden sm:inline-block ml-1 px-1 py-0.2 rounded text-[10px] font-mono ${
-            isLight ? 'bg-black/[0.08] text-zinc-800' : 'bg-white/[0.07] text-white/40'
+            filesContrast.isLight ? 'bg-black/[0.08] text-zinc-800' : 'bg-white/[0.07] text-white/40'
           }`}>
             O
           </kbd>

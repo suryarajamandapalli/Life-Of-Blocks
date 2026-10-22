@@ -1,5 +1,6 @@
 import React, { useState, useRef } from 'react';
 import CircularCheckbox from './CircularCheckbox';
+import { Pencil, Trash2 } from 'lucide-react';
 
 export default function TodoItem({
   todo,
@@ -7,6 +8,8 @@ export default function TodoItem({
   deleteProgress = 0,
   onSelect,
   onToggle,
+  onEdit,
+  onDelete,
   onOpenContextMenu,
   isLightMode = false
 }) {
@@ -37,7 +40,7 @@ export default function TodoItem({
         didTriggerMenuRef.current = true;
         setIsPressing(false);
         setPressProgress(0);
-        onOpenContextMenu(
+        onOpenContextMenu?.(
           { x: clientX, y: clientY },
           todo
         );
@@ -95,7 +98,7 @@ export default function TodoItem({
     e.preventDefault();
     cancelHold();
     onSelect?.(todo);
-    onOpenContextMenu({ x: e.clientX, y: e.clientY }, todo);
+    onOpenContextMenu?.({ x: e.clientX, y: e.clientY }, todo);
   };
 
   const handleRowClick = () => {
@@ -103,7 +106,7 @@ export default function TodoItem({
       didTriggerMenuRef.current = false;
       return;
     }
-    onToggle(todo);
+    onToggle?.(todo);
   };
 
   return (
@@ -120,10 +123,10 @@ export default function TodoItem({
       tabIndex={0}
       role="checkbox"
       aria-checked={Boolean(todo.completed)}
-      className={`group relative flex items-center gap-3.5 px-[18px] min-h-[52px] sm:min-h-[56px] py-2 cursor-pointer select-none transition-all duration-150 overflow-hidden outline-none ${
-        isSelected 
-          ? (isLightMode ? 'bg-black/[0.07]' : 'bg-white/[0.06]') 
-          : (isLightMode ? 'hover:bg-black/[0.04]' : 'hover:bg-white/[0.03]')
+      className={`group relative flex items-center gap-3.5 px-3 py-2.5 sm:py-3 rounded-xl cursor-pointer select-none transition-all duration-150 overflow-hidden outline-none ${
+        isSelected
+          ? (isLightMode ? 'bg-black/[0.06] backdrop-blur-xs' : 'bg-white/[0.07] backdrop-blur-xs')
+          : (isLightMode ? 'hover:bg-black/[0.04] backdrop-blur-xs' : 'hover:bg-white/[0.05] backdrop-blur-xs')
       } ${todo.completed ? 'opacity-55' : 'opacity-100'}`}
     >
       {/* Long-Press DELETE Key Fill Progress Indicator */}
@@ -138,7 +141,7 @@ export default function TodoItem({
       <div className="relative flex items-center justify-center flex-shrink-0 z-10">
         <CircularCheckbox
           checked={Boolean(todo.completed)}
-          onChange={() => onToggle(todo)}
+          onChange={() => onToggle?.(todo)}
           isLightMode={isLightMode}
         />
 
@@ -173,18 +176,51 @@ export default function TodoItem({
 
       {/* Todo title */}
       <span
-        className={`flex-1 text-[15px] leading-snug tracking-wide transition-all duration-150 break-words z-10 ${
+        className={`flex-1 text-[15px] sm:text-[15.5px] leading-snug tracking-wide transition-all duration-150 break-words z-10 ${
           todo.completed
-            ? (isLightMode ? 'line-through text-zinc-900/40 font-normal' : 'line-through text-white/35 font-normal')
-            : (isLightMode ? 'text-zinc-950 font-medium group-hover:text-black' : 'text-white/90 font-normal group-hover:text-white')
+            ? (isLightMode 
+                ? 'line-through text-zinc-900/40 font-normal drop-shadow-[0_1px_3px_rgba(255,255,255,0.6)]' 
+                : 'line-through text-white/35 font-normal drop-shadow-[0_1px_4px_rgba(0,0,0,0.8)]')
+            : (isLightMode 
+                ? 'text-zinc-950 font-medium group-hover:text-black drop-shadow-[0_1px_3px_rgba(255,255,255,0.6)]' 
+                : 'text-white/95 font-normal group-hover:text-white drop-shadow-[0_1px_4px_rgba(0,0,0,0.8)]')
         }`}
       >
         {todo.title}
       </span>
 
+      {/* Desktop Hover Actions (Edit & Delete buttons strictly on hover) */}
+      <div 
+        className="hidden sm:flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity duration-150 z-10 flex-shrink-0"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <button
+          onClick={() => onEdit?.(todo)}
+          title="Edit task"
+          className={`p-1.5 rounded-lg transition-colors cursor-pointer ${
+            isLightMode 
+              ? 'text-zinc-600 hover:text-black hover:bg-black/[0.08]' 
+              : 'text-white/45 hover:text-white hover:bg-white/[0.12]'
+          }`}
+        >
+          <Pencil className="w-3.5 h-3.5" />
+        </button>
+        <button
+          onClick={() => onDelete?.(todo)}
+          title="Delete task"
+          className={`p-1.5 rounded-lg transition-colors cursor-pointer ${
+            isLightMode 
+              ? 'text-zinc-600 hover:text-rose-600 hover:bg-rose-50' 
+              : 'text-white/45 hover:text-rose-400 hover:bg-rose-500/20'
+          }`}
+        >
+          <Trash2 className="w-3.5 h-3.5" />
+        </button>
+      </div>
+
       {/* Deleting Indicator Label */}
       {deleteProgress > 0 && (
-        <span className="text-[11px] font-mono font-medium text-rose-500 dark:text-rose-300 z-10 flex-shrink-0 animate-pulse">
+        <span className="text-[11px] font-mono font-medium text-rose-500 dark:text-rose-300 z-10 flex-shrink-0 animate-pulse ml-2">
           Hold Del ({Math.round(deleteProgress * 100)}%)
         </span>
       )}
