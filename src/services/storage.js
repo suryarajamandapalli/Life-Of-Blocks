@@ -5,6 +5,15 @@
 import { 
   getCurrentUser, 
   subscribeAuth, 
+  subscribeFirestoreBlocks,
+  setFirestoreBlock,
+  removeFirestoreBlock,
+  subscribeFirestoreTodos,
+  setFirestoreTodo,
+  removeFirestoreTodo,
+  subscribeFirestoreFiles,
+  setFirestoreFile,
+  removeFirestoreFile,
   subscribeRTDBBlocks, 
   setRTDBBlock, 
   removeRTDBBlock, 
@@ -152,9 +161,10 @@ export function createBlock(name) {
   localStorage.setItem(BLOCKS_KEY, JSON.stringify(blocks));
   notifyChange();
 
-  // Realtime Database Sync
+  // Realtime Cloud Sync (Firestore & Realtime Database)
   if (user?.uid) {
-    setRTDBBlock(user.uid, newBlock).catch(e => console.warn('RTDB block sync error:', e));
+    setFirestoreBlock(user.uid, newBlock).catch(() => {});
+    setRTDBBlock(user.uid, newBlock).catch(() => {});
   }
 
   return newBlock.id;
@@ -185,9 +195,10 @@ export async function deleteBlock(blockId) {
 
   notifyChange();
 
-  // 4. Sync delete to Realtime Database
+  // 4. Sync delete to Cloud (Firestore & Realtime Database)
   if (user?.uid) {
-    removeRTDBBlock(user.uid, blockId).catch(e => console.warn('RTDB block delete error:', e));
+    removeFirestoreBlock(user.uid, blockId).catch(() => {});
+    removeRTDBBlock(user.uid, blockId).catch(() => {});
   }
 }
 
@@ -222,12 +233,11 @@ export function addTodo(blockId, title) {
   localStorage.setItem(TODOS_KEY, JSON.stringify(todos));
   notifyChange();
 
-  // Realtime Database Sync
+  // Realtime Cloud Sync (Firestore & Realtime Database)
   if (user?.uid) {
-    setRTDBTodo(user.uid, newTodo).catch(e => console.warn('RTDB todo sync error:', e));
+    setFirestoreTodo(user.uid, newTodo).catch(() => {});
+    setRTDBTodo(user.uid, newTodo).catch(() => {});
   }
-
-  return newTodo;
 }
 
 export function updateTodo(todoId, updates) {
@@ -243,9 +253,10 @@ export function updateTodo(todoId, updates) {
   localStorage.setItem(TODOS_KEY, JSON.stringify(todos));
   notifyChange();
 
-  // Realtime Database Sync
+  // Realtime Cloud Sync (Firestore & Realtime Database)
   if (user?.uid && updatedTodo) {
-    setRTDBTodo(user.uid, updatedTodo).catch(e => console.warn('RTDB todo update error:', e));
+    setFirestoreTodo(user.uid, updatedTodo).catch(() => {});
+    setRTDBTodo(user.uid, updatedTodo).catch(() => {});
   }
 }
 
@@ -255,9 +266,10 @@ export function deleteTodo(todoId) {
   localStorage.setItem(TODOS_KEY, JSON.stringify(todos));
   notifyChange();
 
-  // Realtime Database Sync
+  // Realtime Cloud Sync (Firestore & Realtime Database)
   if (user?.uid) {
-    removeRTDBTodo(user.uid, todoId).catch(e => console.warn('RTDB todo delete error:', e));
+    removeFirestoreTodo(user.uid, todoId).catch(() => {});
+    removeRTDBTodo(user.uid, todoId).catch(() => {});
   }
 }
 
@@ -335,6 +347,12 @@ export async function uploadFile(blockId, file, onProgress) {
   localStorage.setItem(FILES_META_KEY, JSON.stringify(filesMeta));
   notifyChange();
 
+  // Realtime Cloud Sync (Firestore & Realtime Database)
+  if (user?.uid) {
+    setFirestoreFile(user.uid, newFileMeta).catch(() => {});
+    setRTDBFile(user.uid, newFileMeta).catch(() => {});
+  }
+
   return newFileMeta;
 }
 
@@ -393,85 +411,144 @@ export async function deleteFile(fileId) {
   localStorage.setItem(FILES_META_KEY, JSON.stringify(remainingFiles));
   notifyChange();
 
-  if (user?.uid && targetFile) {
-    deleteFileFromCloud(user.uid, targetFile).catch(e => console.warn('Cloud file delete error:', e));
+  if (user?.uid) {
+    removeFirestoreFile(user.uid, fileId).catch(() => {});
+    removeRTDBFile(user.uid, fileId).catch(() => {});
+    if (targetFile) {
+      deleteFileFromCloud(user.uid, targetFile).catch(e => console.warn('Cloud file delete error:', e));
+    }
   }
 }
 
-// ----------------- REALTIME DATABASE (RTDB) SYNC ENGINE -----------------
+// ----------------- DUAL CLOUD SYNC ENGINE (FIRESTORE & RTDB) -----------------
 let activeUnsubscribes = [];
 
-function setupRTDBSync(uid) {
-  activeUnsubscribes.forEach(unsub => unsub());
+function setupCloudSync(uid) {
+  // Clear any existing active subscriptions
+  activeUnsubscribes.forEach(unsub => {
+    try { if (typeof unsub === 'function') unsub(); } catch {}
+  });
   activeUnsubscribes = [];
 
   if (!uid) return;
 
-  // 1. Listen to Blocks from Realtime Database
-  const unsubBlocks = subscribeRTDBBlocks(uid, (cloudBlocks) => {
+  // Handler for merging cloud blocks
+  const handleIncomingBlocks = (cloudBlocks) => {
+    if (!cloudBlocks || cloudBlocks.length === 0) return;
     const localBlocks = getBlocks();
 
-    if (cloudBlocks && cloudBlocks.length > 0) {
-      // Merge cloud and local blocks safely without deleting anything
-      const map = new Map();
-      localBlocks.forEach(b => map.set(b.id, b));
-      cloudBlocks.forEach(b => map.set(b.id, { ...(map.get(b.id) || {}), ...b }));
+    // Map existing local blocks
+    const map = new Map();
+    localBlocks.forEach(b => map.set(b.id, b));
 
-      const merged = Array.from(map.values()).sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
-      localStorage.setItem(BLOCKS_KEY, JSON.stringify(merged));
-      notifyChange();
-    } else if (localBlocks.length > 0) {
-      // RTDB has no blocks yet, but user has local blocks: PUSH local blocks to RTDB!
-      localBlocks.forEach(b => setRTDBBlock(uid, b));
-    }
-  });
-  activeUnsubscribes.push(unsubBlocks);
+    // Merge cloud blocks (cloud overwrites or adds)
+    cloudBlocks.forEach(b => {
+      const existing = map.get(b.id) || {};
+      map.set(b.id, { ...existing, ...b });
+    });
 
-  // 2. Listen to Todos from Realtime Database
-  const unsubTodos = subscribeRTDBTodos(uid, (cloudTodos) => {
+    const merged = Array.from(map.values()).sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+    localStorage.setItem(BLOCKS_KEY, JSON.stringify(merged));
+    notifyChange();
+  };
+
+  // Handler for merging cloud todos
+  const handleIncomingTodos = (cloudTodos) => {
+    if (!cloudTodos || cloudTodos.length === 0) return;
     const localTodos = getTodos();
+    const map = new Map();
+    localTodos.forEach(t => map.set(t.id, t));
 
-    if (cloudTodos && cloudTodos.length > 0) {
-      const map = new Map();
-      localTodos.forEach(t => map.set(t.id, t));
-      cloudTodos.forEach(t => map.set(t.id, { ...(map.get(t.id) || {}), ...t }));
+    cloudTodos.forEach(t => {
+      const existing = map.get(t.id) || {};
+      map.set(t.id, { ...existing, ...t });
+    });
 
-      const merged = Array.from(map.values()).sort((a, b) => (a.createdAt || 0) - (b.createdAt || 0));
-      localStorage.setItem(TODOS_KEY, JSON.stringify(merged));
-      notifyChange();
-    } else if (localTodos.length > 0) {
-      // RTDB has no todos yet: PUSH local todos to RTDB!
-      localTodos.forEach(t => setRTDBTodo(uid, t));
-    }
-  });
-  activeUnsubscribes.push(unsubTodos);
+    const merged = Array.from(map.values()).sort((a, b) => (a.createdAt || 0) - (b.createdAt || 0));
+    localStorage.setItem(TODOS_KEY, JSON.stringify(merged));
+    notifyChange();
+  };
 
-  // 3. Listen to Files metadata from Realtime Database
-  const unsubFiles = subscribeRTDBFiles(uid, (cloudFiles) => {
+  // Handler for merging cloud files metadata
+  const handleIncomingFiles = (cloudFiles) => {
+    if (!cloudFiles || cloudFiles.length === 0) return;
     const localFiles = getFilesMeta();
+    const map = new Map();
+    localFiles.forEach(f => map.set(f.id, f));
 
-    if (cloudFiles && cloudFiles.length > 0) {
-      const map = new Map();
-      localFiles.forEach(f => map.set(f.id, f));
-      cloudFiles.forEach(f => map.set(f.id, { ...(map.get(f.id) || {}), ...f }));
+    cloudFiles.forEach(f => {
+      const existing = map.get(f.id) || {};
+      map.set(f.id, { ...existing, ...f });
+    });
 
-      const merged = Array.from(map.values()).sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
-      localStorage.setItem(FILES_META_KEY, JSON.stringify(merged));
-      notifyChange();
-    } else if (localFiles.length > 0) {
-      localFiles.forEach(f => setRTDBFile(uid, f));
+    const merged = Array.from(map.values()).sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+    localStorage.setItem(FILES_META_KEY, JSON.stringify(merged));
+    notifyChange();
+  };
+
+  // 1. Subscribe to Firestore in Realtime
+  try {
+    const unsubFsBlocks = subscribeFirestoreBlocks(uid, handleIncomingBlocks);
+    const unsubFsTodos = subscribeFirestoreTodos(uid, handleIncomingTodos);
+    const unsubFsFiles = subscribeFirestoreFiles(uid, handleIncomingFiles);
+    activeUnsubscribes.push(unsubFsBlocks, unsubFsTodos, unsubFsFiles);
+  } catch (fsErr) {
+    console.warn('Firestore live sync listener error:', fsErr);
+  }
+
+  // 2. Subscribe to Realtime Database in Realtime
+  try {
+    const unsubRtdbBlocks = subscribeRTDBBlocks(uid, handleIncomingBlocks);
+    const unsubRtdbTodos = subscribeRTDBTodos(uid, handleIncomingTodos);
+    const unsubRtdbFiles = subscribeRTDBFiles(uid, handleIncomingFiles);
+    activeUnsubscribes.push(unsubRtdbBlocks, unsubRtdbTodos, unsubRtdbFiles);
+  } catch (rtdbErr) {
+    console.warn('RTDB live sync listener error:', rtdbErr);
+  }
+
+  // 3. Initial Push: Immediately push any existing local blocks, todos, and files to cloud
+  // This ensures that blocks created on PC (like 'Gate') are instantly uploaded to Firestore & RTDB
+  // so your mobile phone or other devices can download them immediately!
+  setTimeout(() => {
+    try {
+      const localBlocks = getBlocks();
+      if (localBlocks && localBlocks.length > 0) {
+        localBlocks.forEach(b => {
+          setFirestoreBlock(uid, b).catch(() => {});
+          setRTDBBlock(uid, b).catch(() => {});
+        });
+      }
+
+      const localTodos = getTodos();
+      if (localTodos && localTodos.length > 0) {
+        localTodos.forEach(t => {
+          setFirestoreTodo(uid, t).catch(() => {});
+          setRTDBTodo(uid, t).catch(() => {});
+        });
+      }
+
+      const localFiles = getFilesMeta();
+      if (localFiles && localFiles.length > 0) {
+        localFiles.forEach(f => {
+          setFirestoreFile(uid, f).catch(() => {});
+          setRTDBFile(uid, f).catch(() => {});
+        });
+      }
+    } catch (e) {
+      console.warn('Initial cloud push warning:', e);
     }
-  });
-  activeUnsubscribes.push(unsubFiles);
+  }, 350);
 }
 
-// Listen to Auth State globally to activate RTDB WebSocket listeners
+// Global Auth State Observer to start live sync across all devices
 if (typeof window !== 'undefined') {
   subscribeAuth((user) => {
     if (user?.uid) {
-      setupRTDBSync(user.uid);
+      setupCloudSync(user.uid);
     } else {
-      activeUnsubscribes.forEach(unsub => unsub());
+      activeUnsubscribes.forEach(unsub => {
+        try { if (typeof unsub === 'function') unsub(); } catch {}
+      });
       activeUnsubscribes = [];
     }
   });

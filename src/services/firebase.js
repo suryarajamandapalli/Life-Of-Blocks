@@ -1,5 +1,14 @@
 import { initializeApp, getApps, getApp } from 'firebase/app';
 import { 
+  getFirestore, 
+  doc, 
+  setDoc, 
+  deleteDoc, 
+  onSnapshot, 
+  collection, 
+  getDocs 
+} from 'firebase/firestore';
+import { 
   getDatabase, 
   ref, 
   onValue, 
@@ -73,6 +82,7 @@ export function getFirebaseConfig() {
 }
 
 let app = null;
+let firestore = null;
 let rtdb = null;
 let storage = null;
 let auth = null;
@@ -80,6 +90,11 @@ let auth = null;
 try {
   const activeConfig = getFirebaseConfig();
   app = getApps().length > 0 ? getApp() : initializeApp(activeConfig);
+  try {
+    firestore = getFirestore(app);
+  } catch (fsErr) {
+    console.warn('Firestore initialization notice:', fsErr);
+  }
   rtdb = getDatabase(app, activeConfig.databaseURL || DEFAULT_FIREBASE_CONFIG.databaseURL);
   storage = getStorage(app);
   auth = getAuth(app);
@@ -87,7 +102,7 @@ try {
   console.error('Firebase initialization error:', error);
 }
 
-export { app, rtdb, storage, auth };
+export { app, firestore, rtdb, storage, auth };
 
 // ========================================================
 // AUTHENTICATION HELPERS
@@ -166,6 +181,140 @@ export async function signOutUser() {
 
 export function getCurrentUser() {
   return auth?.currentUser || null;
+}
+
+// ========================================================
+// FIRESTORE CLOUD DATABASE SYNC: BLOCKS, TODOS & FILES
+// Paths: users/{uid}/blocks, users/{uid}/todos, users/{uid}/files
+// ========================================================
+
+export function subscribeFirestoreBlocks(uid, callback) {
+  if (!firestore || !uid) return () => {};
+  try {
+    const colRef = collection(firestore, `users/${uid}/blocks`);
+    return onSnapshot(colRef, (snapshot) => {
+      const blocksArray = [];
+      snapshot.forEach(docSnap => {
+        blocksArray.push({ id: docSnap.id, ...docSnap.data() });
+      });
+      callback(blocksArray);
+    }, (err) => {
+      console.warn('Firestore blocks listen error:', err);
+    });
+  } catch (err) {
+    console.warn('Firestore blocks listen exception:', err);
+    return () => {};
+  }
+}
+
+export async function setFirestoreBlock(uid, block) {
+  if (!firestore || !uid || !block?.id) return;
+  try {
+    const dRef = doc(firestore, `users/${uid}/blocks`, block.id);
+    return await setDoc(dRef, block, { merge: true });
+  } catch (err) {
+    console.warn('Firestore block write error:', err);
+  }
+}
+
+export async function removeFirestoreBlock(uid, blockId) {
+  if (!firestore || !uid || !blockId) return;
+  try {
+    const dRef = doc(firestore, `users/${uid}/blocks`, blockId);
+    await deleteDoc(dRef).catch(() => {});
+
+    // Also remove any sub-todos for this block in Firestore
+    const todosCol = collection(firestore, `users/${uid}/todos`);
+    const snap = await getDocs(todosCol).catch(() => null);
+    if (snap) {
+      snap.forEach(async (docSnap) => {
+        const data = docSnap.data();
+        if (data?.blockId === blockId) {
+          await deleteDoc(doc(firestore, `users/${uid}/todos`, docSnap.id)).catch(() => {});
+        }
+      });
+    }
+  } catch (err) {
+    console.warn('Firestore block remove error:', err);
+  }
+}
+
+export function subscribeFirestoreTodos(uid, callback) {
+  if (!firestore || !uid) return () => {};
+  try {
+    const colRef = collection(firestore, `users/${uid}/todos`);
+    return onSnapshot(colRef, (snapshot) => {
+      const todosArray = [];
+      snapshot.forEach(docSnap => {
+        todosArray.push({ id: docSnap.id, ...docSnap.data() });
+      });
+      callback(todosArray);
+    }, (err) => {
+      console.warn('Firestore todos listen error:', err);
+    });
+  } catch (err) {
+    console.warn('Firestore todos listen exception:', err);
+    return () => {};
+  }
+}
+
+export async function setFirestoreTodo(uid, todo) {
+  if (!firestore || !uid || !todo?.id) return;
+  try {
+    const dRef = doc(firestore, `users/${uid}/todos`, todo.id);
+    return await setDoc(dRef, todo, { merge: true });
+  } catch (err) {
+    console.warn('Firestore todo write error:', err);
+  }
+}
+
+export async function removeFirestoreTodo(uid, todoId) {
+  if (!firestore || !uid || !todoId) return;
+  try {
+    const dRef = doc(firestore, `users/${uid}/todos`, todoId);
+    return await deleteDoc(dRef);
+  } catch (err) {
+    console.warn('Firestore todo remove error:', err);
+  }
+}
+
+export function subscribeFirestoreFiles(uid, callback) {
+  if (!firestore || !uid) return () => {};
+  try {
+    const colRef = collection(firestore, `users/${uid}/files`);
+    return onSnapshot(colRef, (snapshot) => {
+      const filesArray = [];
+      snapshot.forEach(docSnap => {
+        filesArray.push({ id: docSnap.id, ...docSnap.data() });
+      });
+      callback(filesArray);
+    }, (err) => {
+      console.warn('Firestore files listen error:', err);
+    });
+  } catch (err) {
+    console.warn('Firestore files listen exception:', err);
+    return () => {};
+  }
+}
+
+export async function setFirestoreFile(uid, fileMeta) {
+  if (!firestore || !uid || !fileMeta?.id) return;
+  try {
+    const dRef = doc(firestore, `users/${uid}/files`, fileMeta.id);
+    return await setDoc(dRef, fileMeta, { merge: true });
+  } catch (err) {
+    console.warn('Firestore file write error:', err);
+  }
+}
+
+export async function removeFirestoreFile(uid, fileId) {
+  if (!firestore || !uid || !fileId) return;
+  try {
+    const dRef = doc(firestore, `users/${uid}/files`, fileId);
+    return await deleteDoc(dRef);
+  } catch (err) {
+    console.warn('Firestore file remove error:', err);
+  }
 }
 
 // ========================================================
