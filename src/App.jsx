@@ -354,16 +354,14 @@ export default function App() {
 
       {/* Top Controls: Trusted Network Indicator + Wallpaper Shuffle */}
       <div className="fixed top-3.5 right-4 sm:top-5 sm:right-6 z-20 flex items-center gap-2">
-        {/* Trusted Wi-Fi Status Badge */}
+        {/* Trusted Wi-Fi Status — Pure Red or Green Dot, Zero Text */}
         <button
           onClick={() => setIsSecurityModalOpen(true)}
-          title="Security & Trusted Network Settings"
-          className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-black/40 hover:bg-black/65 border border-white/10 hover:border-white/30 backdrop-blur-md text-[11px] font-mono tracking-wide transition-all duration-200 cursor-pointer shadow-lg active:scale-95 select-none"
+          title={trustState.isTrusted ? 'Trusted Wi-Fi (Connected)' : 'Untrusted Network'}
+          aria-label="Security & Trusted Network Status"
+          className="w-8 h-8 sm:w-9 sm:h-9 rounded-full bg-black/40 hover:bg-black/65 border border-white/10 hover:border-white/30 backdrop-blur-md transition-all duration-200 flex items-center justify-center cursor-pointer shadow-lg active:scale-95 select-none"
         >
-          <span className={`w-2 h-2 rounded-full ${trustState.isTrusted ? 'bg-emerald-400' : 'bg-rose-400 animate-pulse'}`} />
-          <span className="hidden sm:inline text-white/70">
-            {trustState.isTrusted ? 'Trusted Wi-Fi' : 'Untrusted'}
-          </span>
+          <span className={`w-2 h-2 rounded-full ${trustState.isTrusted ? 'bg-emerald-400 shadow-[0_0_8px_#34d399]' : 'bg-rose-400 shadow-[0_0_8px_#f87171] animate-pulse'}`} />
         </button>
 
         {/* Wallpaper Shuffle Button — Pure Icon, Zero Text */}
