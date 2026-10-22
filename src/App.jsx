@@ -13,11 +13,7 @@ import {
   deleteFile, 
   subscribeToStorage 
 } from './services/storage';
-import { 
-  getRandomWallpaper, 
-  preloadWallpaperImage, 
-  getFastFallbackWallpaper 
-} from './services/wallpapers';
+import { getRandomWallpaper, fetchLiveWallhavenWallpapers } from './services/wallpapers';
 import { 
   isWallpaperLocked, 
   getLockedWallpaper, 
@@ -36,7 +32,6 @@ import QuickNotesModal from './components/QuickNotesModal';
 import GoogleAuthButton from './components/GoogleAuthButton';
 import WallpaperControls from './components/WallpaperControls';
 import StarredWallpapersModal from './components/StarredWallpapersModal';
-import GlowingGridLoader from './components/GlowingGridLoader';
 
 export default function App() {
   const [blocks, setBlocks] = useState([]);
@@ -52,17 +47,16 @@ export default function App() {
   const [isGalleryOpen, setIsGalleryOpen] = useState(false);
   const [activeAmbient, setActiveAmbient] = useState(null);
 
-  // Dual-Buffer Wallpaper System (ZERO flash to black, smooth crossfade)
-  const [currentWallpaper, setCurrentWallpaper] = useState(() => {
+  // Wallpaper state (restores locked wallpaper if user locked one)
+  const [wallpaper, setWallpaper] = useState(() => {
     if (isWallpaperLocked()) {
       const lockedWp = getLockedWallpaper();
       if (lockedWp) return lockedWp;
     }
     return getRandomWallpaper();
   });
-  const [nextWallpaper, setNextWallpaper] = useState(null);
-  const [nextWallpaperFadingIn, setNextWallpaperFadingIn] = useState(false);
-  const [isWallpaperLoading, setIsWallpaperLoading] = useState(false);
+  const [wallpaperLoaded, setWallpaperLoaded] = useState(false);
+  const [liveWallpapers, setLiveWallpapers] = useState([]);
   const [isRefreshingWallpaper, setIsRefreshingWallpaper] = useState(false);
   const wallpaperImgRef = useRef(null);
 
@@ -97,79 +91,70 @@ export default function App() {
     }
   };
 
-  // Smooth Crossfade Wallpaper Application
-  const applyWallpaper = useCallback(async (candidate) => {
-    if (!candidate) return;
-    if (candidate.id === currentWallpaper.id && !nextWallpaper) return;
-
-    setIsRefreshingWallpaper(true);
-    setIsWallpaperLoading(true);
-    setNextWallpaper(candidate);
-    setNextWallpaperFadingIn(false);
-
-    try {
-      // Preload 4K image into browser cache
-      await preloadWallpaperImage(candidate.url, 8000);
-
-      // Image is 100% loaded and decoded. Smoothly fade it in!
-      setNextWallpaperFadingIn(true);
-
-      setTimeout(() => {
-        setCurrentWallpaper(candidate);
-        setNextWallpaper(null);
-        setNextWallpaperFadingIn(false);
-        setIsWallpaperLoading(false);
-        setIsRefreshingWallpaper(false);
-      }, 700);
-    } catch (err) {
-      console.warn('Preload failed for candidate, using fast fallback:', err);
-      const fallback = getFastFallbackWallpaper(candidate.id);
-      try {
-        await preloadWallpaperImage(fallback.url, 6000);
-        setNextWallpaper(fallback);
-        setNextWallpaperFadingIn(true);
-        setTimeout(() => {
-          setCurrentWallpaper(fallback);
-          setNextWallpaper(null);
-          setNextWallpaperFadingIn(false);
-          setIsWallpaperLoading(false);
-          setIsRefreshingWallpaper(false);
-        }, 700);
-      } catch {
-        setIsWallpaperLoading(false);
-        setIsRefreshingWallpaper(false);
-        setNextWallpaper(null);
+  // Fetch live random Wallhaven wallpapers on startup
+  useEffect(() => {
+    fetchLiveWallhavenWallpapers().then((liveList) => {
+      if (liveList && liveList.length > 0) {
+        setLiveWallpapers(liveList);
+        // Only randomize if wallpaper is NOT locked
+        if (!isWallpaperLocked()) {
+          const randomItem = liveList[Math.floor(Math.random() * liveList.length)];
+          setWallpaper(randomItem);
+        }
       }
-    }
-  }, [currentWallpaper.id, nextWallpaper]);
-
-  // Shuffle to another random wallpaper
-  const handleNextWallpaper = useCallback(async () => {
-    if (isWallpaperLoading) return;
-    const next = getRandomWallpaper(currentWallpaper.id);
-    await applyWallpaper(next);
-  }, [isWallpaperLoading, currentWallpaper.id, applyWallpaper]);
-
-  // Select wallpaper directly from Starred Gallery
-  const handleSelectWallpaper = useCallback(async (selectedWp) => {
-    if (isWallpaperLocked()) {
-      setWallpaperLock(true, selectedWp);
-    }
-    await applyWallpaper(selectedWp);
-  }, [applyWallpaper]);
+    });
+  }, []);
 
   // Listen for Wallpaper Lock updates across devices via RTDB
   useEffect(() => {
     const unsub = subscribeWallpaperStore(() => {
       if (isWallpaperLocked()) {
         const lockedWp = getLockedWallpaper();
-        if (lockedWp && lockedWp.id !== currentWallpaper?.id && lockedWp.id !== nextWallpaper?.id) {
-          applyWallpaper(lockedWp);
+        if (lockedWp && lockedWp.id !== wallpaper?.id) {
+          setWallpaper(lockedWp);
         }
       }
     });
     return () => unsub();
-  }, [currentWallpaper?.id, nextWallpaper?.id, applyWallpaper]);
+  }, [wallpaper?.id]);
+
+  // Shuffle to another random wallpaper
+  const handleNextWallpaper = async () => {
+    setIsRefreshingWallpaper(true);
+    try {
+      if (liveWallpapers.length > 1) {
+        const remaining = liveWallpapers.filter(w => w.id !== wallpaper.id);
+        const next = remaining[Math.floor(Math.random() * remaining.length)];
+        setWallpaper(next);
+      } else {
+        const freshList = await fetchLiveWallhavenWallpapers();
+        if (freshList && freshList.length > 0) {
+          setLiveWallpapers(freshList);
+          const next = freshList[Math.floor(Math.random() * freshList.length)];
+          setWallpaper(next);
+        }
+      }
+    } finally {
+      setTimeout(() => setIsRefreshingWallpaper(false), 350);
+    }
+  };
+
+  // Select wallpaper directly from Starred Gallery
+  const handleSelectWallpaper = (selectedWp) => {
+    setWallpaper(selectedWp);
+    if (isWallpaperLocked()) {
+      setWallpaperLock(true, selectedWp);
+    }
+  };
+
+  // Preload wallpaper
+  useEffect(() => {
+    setWallpaperLoaded(false);
+    const img = new Image();
+    img.src = wallpaper.url;
+    img.onload = () => setWallpaperLoaded(true);
+    img.onerror = () => setWallpaperLoaded(true);
+  }, [wallpaper]);
 
   // Sync data from local & cloud storage
   const syncData = useCallback(() => {
@@ -193,10 +178,12 @@ export default function App() {
   useEffect(() => {
     if (currentBlockId) {
       setFiles(getFilesByBlock(currentBlockId));
+    } else {
+      setFiles([]);
     }
   }, [currentBlockId]);
 
-  // Global Keyboard Shortcuts
+  // Global Keyboard Navigation
   const isRightShiftDownRef = useRef(false);
   const didComboRef = useRef(false);
 
@@ -335,37 +322,17 @@ export default function App() {
 
   return (
     <div className="relative min-h-[100dvh] w-full flex flex-col font-sans selection:bg-white/20 selection:text-white bg-[#050608] overflow-x-hidden">
-      {/* ========================================================
-          DUAL-LAYER 4K WALLPAPER SYSTEM (ZERO FLASH TO BLACK)
-          Layer A: Current wallpaper stays at 100% opacity.
-          Layer B: Next wallpaper crossfades over Layer A when loaded.
-          ======================================================== */}
-      
-      {/* LAYER A: Current Wallpaper (Always visible, solid backing) */}
+      {/* 4K Wallhaven Wallpaper with Smooth Fade */}
       <div 
         ref={wallpaperImgRef}
-        className="fixed inset-0 z-0 bg-cover bg-center bg-no-repeat pointer-events-none"
+        className={`fixed inset-0 z-0 bg-cover bg-center bg-no-repeat pointer-events-none transition-opacity duration-700 ease-in-out ${
+          wallpaperLoaded ? 'opacity-100' : 'opacity-0'
+        }`}
         style={{
-          backgroundImage: `url('${currentWallpaper.url}')`,
+          backgroundImage: `url('${wallpaper.url}')`,
           transform: 'translateZ(0)',
         }}
       />
-
-      {/* LAYER B: Next Wallpaper (Fades in seamlessly over Layer A) */}
-      {nextWallpaper && (
-        <div 
-          className={`fixed inset-0 z-0 bg-cover bg-center bg-no-repeat pointer-events-none transition-opacity duration-700 ease-in-out ${
-            nextWallpaperFadingIn ? 'opacity-100' : 'opacity-0'
-          }`}
-          style={{
-            backgroundImage: `url('${nextWallpaper.url}')`,
-            transform: 'translateZ(0)',
-          }}
-        />
-      )}
-
-      {/* GLOWING TRANSPARENT GRID BLOCKS: Animated waves during 4K image load */}
-      <GlowingGridLoader isVisible={isWallpaperLoading} />
 
       {/* Gentle Scrim — Maximum Wallpaper Dominance & Clarity */}
       <div 
@@ -382,9 +349,9 @@ export default function App() {
 
         {/* Interactive Wallpaper Controls (Shuffle on click; Lock, Star & 3x3 Gallery on hover/long-press) */}
         <WallpaperControls
-          currentWallpaper={currentWallpaper}
+          currentWallpaper={wallpaper}
           onRefresh={handleNextWallpaper}
-          isRefreshing={isRefreshingWallpaper || isWallpaperLoading}
+          isRefreshing={isRefreshingWallpaper}
           onOpenGallery={() => setIsGalleryOpen(true)}
         />
       </div>
@@ -398,7 +365,7 @@ export default function App() {
             files={files}
             loadingTodos={false}
             loadingFiles={false}
-            wallpaper={currentWallpaper}
+            wallpaper={wallpaper}
             onBack={() => setCurrentBlockId(null)}
             onAddTodo={handleAddTodo}
             onToggleTodo={handleToggleTodo}
@@ -413,7 +380,7 @@ export default function App() {
             blocks={blocks}
             todos={todos}
             loading={false}
-            wallpaper={currentWallpaper}
+            wallpaper={wallpaper}
             onOpenBlock={(block) => setCurrentBlockId(block.id)}
             onOpenCreateModal={() => setIsCreateModalOpen(true)}
             onRequestDeleteBlock={(block) => setDeletingBlock(block)}
@@ -463,7 +430,7 @@ export default function App() {
       <StarredWallpapersModal
         isOpen={isGalleryOpen}
         onClose={() => setIsGalleryOpen(false)}
-        activeWallpaper={currentWallpaper}
+        activeWallpaper={wallpaper}
         onSelectWallpaper={handleSelectWallpaper}
       />
 

@@ -302,56 +302,95 @@ export async function uploadFileToCloud(uid, blockId, file, onProgress) {
   }
 
   let downloadURL = null;
-  let cdnProvider = 'firebase';
+  let cdnProvider = 'local';
   let storagePath = null;
 
-  // 1. Try Cloudinary CDN first if cloud name is available
-  const cloudName = getCloudinaryCloudName();
-  if (cloudName) {
+  // 1. Generate local Data URL for immediate display & instant RTDB sync across all devices
+  if (file.size <= 3 * 1024 * 1024) {
     try {
-      const cdnResult = await uploadToCloudinary(file, `lob_${uid}`, onProgress);
-      downloadURL = cdnResult.url;
-      cdnProvider = 'cloudinary';
-      storagePath = cdnResult.publicId;
-    } catch (cdnErr) {
-      console.warn('Cloudinary upload deferred to Firebase Storage:', cdnErr);
+      downloadURL = await new Promise((resolve) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(reader.result);
+        reader.onerror = () => resolve(null);
+        reader.readAsDataURL(file);
+      });
+      if (downloadURL) {
+        cdnProvider = 'rtdb_data';
+      }
+    } catch (e) {
+      console.warn('Data URL generation warning:', e);
     }
   }
 
-  // 2. Fallback to Firebase Cloud Storage CDN
-  if (!downloadURL && storage) {
-    const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, '_');
-    const fileId = 'f_' + Date.now() + '_' + Math.random().toString(36).substring(2, 7);
-    storagePath = `users/${uid}/blocks/${blockId}/files/${fileId}_${safeName}`;
-    const fileStorageRef = storageRef(storage, storagePath);
-
-    const uploadTask = uploadBytesResumable(fileStorageRef, file, {
-      contentType: file.type || 'application/octet-stream',
-    });
-
-    await new Promise((resolve, reject) => {
-      uploadTask.on(
-        'state_changed',
-        (snapshot) => {
-          if (snapshot.totalBytes > 0) {
-            const pct = Math.round((snapshot.bytesTransferred / snapshot.totalBytes) * 100);
-            if (onProgress) onProgress(pct);
-          }
-        },
-        (error) => reject(error),
-        async () => {
-          try {
-            downloadURL = await getDownloadURL(uploadTask.snapshot.ref);
-            resolve();
-          } catch (e) {
-            reject(e);
-          }
-        }
-      );
-    });
+  // 2. Try Cloudinary CDN upload if cloud name is available
+  const cloudName = getCloudinaryCloudName();
+  if (cloudName) {
+    try {
+      if (onProgress) onProgress(45);
+      const cdnResult = await Promise.race([
+        uploadToCloudinary(file, `lob_${uid}`, (pct) => {
+          if (onProgress) onProgress(Math.min(95, Math.max(45, pct)));
+        }),
+        new Promise((_, reject) => setTimeout(() => reject(new Error('Cloudinary upload timeout')), 15000))
+      ]);
+      if (cdnResult?.url) {
+        downloadURL = cdnResult.url;
+        cdnProvider = 'cloudinary';
+        storagePath = cdnResult.publicId;
+      }
+    } catch (cdnErr) {
+      console.warn('Cloudinary upload deferred:', cdnErr);
+    }
   }
 
-  // 3. Save file metadata in RTDB
+  // 3. Fallback to Firebase Storage with strict 5-second timeout (never hang if bucket not configured)
+  if (!downloadURL && storage) {
+    try {
+      const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, '_');
+      const fileId = 'f_' + Date.now() + '_' + Math.random().toString(36).substring(2, 7);
+      storagePath = `users/${uid}/blocks/${blockId}/files/${fileId}_${safeName}`;
+      const fileStorageRef = storageRef(storage, storagePath);
+
+      const uploadTask = uploadBytesResumable(fileStorageRef, file, {
+        contentType: file.type || 'application/octet-stream',
+      });
+
+      await Promise.race([
+        new Promise((resolve, reject) => {
+          uploadTask.on(
+            'state_changed',
+            (snapshot) => {
+              if (snapshot.totalBytes > 0) {
+                const pct = Math.round((snapshot.bytesTransferred / snapshot.totalBytes) * 100);
+                if (onProgress) onProgress(pct);
+              }
+            },
+            (error) => reject(error),
+            async () => {
+              try {
+                downloadURL = await getDownloadURL(uploadTask.snapshot.ref);
+                cdnProvider = 'firebase';
+                resolve();
+              } catch (e) {
+                reject(e);
+              }
+            }
+          );
+        }),
+        new Promise((_, reject) => setTimeout(() => {
+          try { uploadTask.cancel(); } catch {}
+          reject(new Error('Firebase Storage timeout'));
+        }, 5000))
+      ]);
+    } catch (storageErr) {
+      console.warn('Firebase Storage upload warning:', storageErr);
+    }
+  }
+
+  // Finalize progress
+  if (onProgress) onProgress(100);
+
+  // 4. Save file metadata in RTDB (downloadURL contains either Cloudinary CDN URL or Data URL)
   const fileId = 'file_' + Date.now() + '_' + Math.random().toString(36).substring(2, 7);
   const fileMeta = {
     id: fileId,
@@ -366,7 +405,11 @@ export async function uploadFileToCloud(uid, blockId, file, onProgress) {
   };
 
   if (rtdb && uid) {
-    await setRTDBFile(uid, fileMeta);
+    try {
+      await setRTDBFile(uid, fileMeta);
+    } catch (rtdbErr) {
+      console.warn('RTDB file save warning:', rtdbErr);
+    }
   }
 
   return fileMeta;

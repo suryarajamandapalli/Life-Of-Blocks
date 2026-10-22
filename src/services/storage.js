@@ -279,24 +279,44 @@ export async function uploadFile(blockId, file, onProgress) {
   const user = getCurrentUser();
   const fileId = 'file_' + Date.now() + '_' + Math.random().toString(36).substring(2, 7);
 
-  await saveFileBlob(fileId, file);
+  if (onProgress) onProgress(15);
+
+  // 1. Always store full file in local IndexedDB blob storage immediately
+  try {
+    await saveFileBlob(fileId, file);
+  } catch (err) {
+    console.warn('Local blob save error:', err);
+  }
+
+  if (onProgress) onProgress(35);
 
   let cloudResult = null;
   if (user?.uid) {
     try {
-      cloudResult = await uploadFileToCloud(user.uid, blockId, file, onProgress);
+      cloudResult = await uploadFileToCloud(user.uid, blockId, file, (pct) => {
+        if (onProgress) onProgress(Math.max(35, Math.min(95, pct)));
+      });
     } catch (e) {
       console.warn('Cloud upload failed, storing locally:', e);
     }
   } else {
-    if (onProgress) {
-      onProgress(30);
-      await new Promise(r => setTimeout(r, 60));
-      onProgress(70);
-      await new Promise(r => setTimeout(r, 60));
-      onProgress(100);
+    // Guest mode: generate Data URL if <= 3MB
+    if (file.size <= 3 * 1024 * 1024) {
+      try {
+        const dataUrl = await new Promise((res) => {
+          const r = new FileReader();
+          r.onload = () => res(r.result);
+          r.onerror = () => res(null);
+          r.readAsDataURL(file);
+        });
+        if (dataUrl) {
+          cloudResult = { downloadURL: dataUrl, cdnProvider: 'local_data' };
+        }
+      } catch {}
     }
   }
+
+  if (onProgress) onProgress(100);
 
   const filesMeta = getFilesMeta();
   const newFileMeta = {
@@ -320,6 +340,16 @@ export async function uploadFile(blockId, file, onProgress) {
 
 export async function downloadFile(file) {
   try {
+    if (file.downloadURL && file.downloadURL.startsWith('data:')) {
+      const link = document.createElement('a');
+      link.href = file.downloadURL;
+      link.download = file.name || 'download';
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      return;
+    }
+
     if (file.downloadURL) {
       const res = await fetch(file.downloadURL);
       const blob = await res.blob();

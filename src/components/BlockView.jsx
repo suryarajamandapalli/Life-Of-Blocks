@@ -248,7 +248,7 @@ export default function BlockView({
 
     e.target.value = '';
     setUploadingFileName(file.name);
-    setUploadProgress(0);
+    setUploadProgress(10);
 
     try {
       await onUploadFile(block.id, file, (progress) => {
@@ -257,8 +257,11 @@ export default function BlockView({
     } catch (err) {
       console.error('File upload failed:', err);
     } finally {
-      setUploadProgress(null);
-      setUploadingFileName('');
+      setUploadProgress(100);
+      setTimeout(() => {
+        setUploadProgress(null);
+        setUploadingFileName('');
+      }, 450);
     }
   };
 
