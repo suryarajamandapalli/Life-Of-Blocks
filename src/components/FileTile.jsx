@@ -19,7 +19,7 @@ export default function FileTile({
   onRequestDelete,
   isLightMode = false
 }) {
-  const [thumbUrl, setThumbUrl] = useState(null);
+  const [thumbUrl, setThumbUrl] = useState(() => file.downloadURL || null);
   const [textSnippet, setTextSnippet] = useState(null);
 
   const ext = file.name.split('.').pop()?.toLowerCase() || '';
@@ -38,7 +38,9 @@ export default function FileTile({
     let active = true;
     let url = null;
 
-    if (isImage || isVideo) {
+    if (file.downloadURL && (isImage || isVideo)) {
+      setThumbUrl(file.downloadURL);
+    } else if (isImage || isVideo) {
       getFileObjectUrl(file.id).then((resUrl) => {
         if (active && resUrl) {
           url = resUrl;

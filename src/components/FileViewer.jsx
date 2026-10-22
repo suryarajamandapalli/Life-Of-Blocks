@@ -349,9 +349,9 @@ export default function FileViewer({ file, allFiles = [], onClose, onDownload, o
           if (!active) return;
           setTextContent(text || '');
         } else {
-          const url = await getFileObjectUrl(file.id);
+          const url = file.downloadURL || await getFileObjectUrl(file.id);
           if (!active) return;
-          createdUrl = url;
+          if (!file.downloadURL) createdUrl = url;
           setObjectUrl(url);
         }
       } catch (err) {

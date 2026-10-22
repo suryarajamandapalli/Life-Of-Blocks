@@ -1,18 +1,16 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
 import { 
   X, 
   Clock, 
   FileText, 
   CloudRain, 
-  Waves, 
   Sparkles, 
   Plus, 
-  Upload, 
   RotateCw, 
-  Keyboard,
   VolumeX,
-  ShieldCheck
+  Cloud
 } from 'lucide-react';
+import { subscribeAuth, signInWithGoogle } from '../services/firebase';
 
 export default function AppTray({
   isOpen,
@@ -20,13 +18,18 @@ export default function AppTray({
   onTogglePomodoro,
   isPomodoroVisible,
   onOpenScratchpad,
-  onOpenSecurity,
   onNextWallpaper,
   onTriggerNewItem,
   onTriggerUpload,
   activeAmbient,
   onToggleAmbient
 }) {
+  const [user, setUser] = useState(null);
+
+  useEffect(() => {
+    const unsub = subscribeAuth((u) => setUser(u));
+    return () => unsub();
+  }, []);
   useEffect(() => {
     const handleKeyDown = (e) => {
       if (e.key === 'Escape' && isOpen) {
@@ -149,19 +152,27 @@ export default function AppTray({
             </span>
           </button>
 
-          {/* App 4: Security & Trusted Wi-Fi Settings */}
+          {/* App 4: Google Cloud Firestore Sync */}
           <button
             onClick={() => {
-              onOpenSecurity();
+              if (!user) {
+                signInWithGoogle().catch(() => {});
+              }
               onClose();
             }}
             className="group flex flex-col items-center justify-center p-3.5 rounded-2xl bg-white/[0.04] hover:bg-white/[0.09] border border-white/10 text-white/80 hover:text-white transition-all duration-200 hover:-translate-y-0.5 cursor-pointer"
           >
-            <div className="w-10 h-10 rounded-xl bg-purple-500/20 border border-purple-500/30 flex items-center justify-center mb-2 group-hover:scale-105 transition-transform">
-              <ShieldCheck className="w-5 h-5 text-purple-300" />
+            <div className={`w-10 h-10 rounded-xl flex items-center justify-center mb-2 group-hover:scale-105 transition-transform ${
+              user ? 'bg-emerald-500/20 border border-emerald-500/30' : 'bg-blue-500/20 border border-blue-500/30'
+            }`}>
+              <Cloud className={`w-5 h-5 ${user ? 'text-emerald-300' : 'text-blue-300'}`} />
             </div>
-            <span className="text-xs font-semibold tracking-wide">Security & Wi-Fi</span>
-            <span className="text-[10px] text-white/40 font-mono mt-0.5">Trusted Lock</span>
+            <span className="text-xs font-semibold tracking-wide">
+              {user ? 'Cloud Synced' : 'Google Sync'}
+            </span>
+            <span className="text-[10px] text-white/40 font-mono mt-0.5 truncate max-w-[100px]">
+              {user ? 'Firestore Live' : 'Click to Sign In'}
+            </span>
           </button>
         </div>
 

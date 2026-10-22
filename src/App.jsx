@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { RotateCw, ShieldCheck, ShieldAlert } from 'lucide-react';
+import { RotateCw } from 'lucide-react';
 import { 
   getBlocks, 
   createBlock, 
@@ -16,9 +16,6 @@ import {
 } from './services/storage';
 import { getRandomWallpaper, fetchLiveWallhavenWallpapers } from './services/wallpapers';
 import { sound } from './services/sound';
-import { initWorkspaceSecurity } from './services/security';
-import { networkTrust } from './services/networkTrust';
-import { syncEngine } from './services/sync';
 
 import MainScreen from './components/MainScreen';
 import BlockView from './components/BlockView';
@@ -27,8 +24,7 @@ import ConfirmModal from './components/ConfirmModal';
 import PomodoroWidget from './components/PomodoroWidget';
 import AppTray from './components/AppTray';
 import QuickNotesModal from './components/QuickNotesModal';
-import LockScreen from './components/LockScreen';
-import SecuritySettingsModal from './components/SecuritySettingsModal';
+import GoogleAuthButton from './components/GoogleAuthButton';
 
 export default function App() {
   const [blocks, setBlocks] = useState([]);
@@ -36,19 +32,11 @@ export default function App() {
   const [currentBlockId, setCurrentBlockId] = useState(null);
   const [files, setFiles] = useState([]);
 
-  // Trusted Wi-Fi Lock & Network Trust State
-  const [isLocked, setIsLocked] = useState(() => networkTrust.isWorkspaceLocked());
-  const [trustState, setTrustState] = useState(() => ({
-    status: networkTrust.getStatus(),
-    isTrusted: networkTrust.isTrustedNetwork()
-  }));
-
   // Modals & Panels state
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   const [deletingBlock, setDeletingBlock] = useState(null);
   const [isAppTrayOpen, setIsAppTrayOpen] = useState(false);
   const [isScratchpadOpen, setIsScratchpadOpen] = useState(false);
-  const [isSecurityModalOpen, setIsSecurityModalOpen] = useState(false);
   const [activeAmbient, setActiveAmbient] = useState(null);
 
   // Random wallpaper strictly from Wallhaven
@@ -66,40 +54,6 @@ export default function App() {
       return false;
     }
   });
-
-  // 1. Initialize Security, Network Trust, and Sync Engine on startup
-  useEffect(() => {
-    initWorkspaceSecurity();
-    syncEngine.init();
-
-    // Check URL parameters for device pairing (?pair=...)
-    try {
-      const params = new URLSearchParams(window.location.search);
-      const pairParam = params.get('pair');
-      if (pairParam) {
-        const decoded = JSON.parse(atob(pairParam));
-        if (decoded.trustedHost) {
-          const isVercel = decoded.trustedHost.includes('vercel.app');
-          const cleanHost = decoded.trustedHost.replace(/^https?:\/\//, '').replace(/:5173$/, isVercel ? '' : ':5173');
-          const endpoint = isVercel ? `https://${cleanHost}` : `http://${cleanHost}`;
-          networkTrust.setStoredEndpoint(endpoint);
-          syncEngine.setEndpoint(endpoint);
-          syncEngine.hydrateFromHost();
-        }
-        window.history.replaceState({}, document.title, window.location.pathname);
-      }
-    } catch (e) {
-      console.warn('Pairing URL processing deferred:', e);
-    }
-  }, []);
-
-  // 2. Subscribe to Network Trust & Lock status
-  useEffect(() => {
-    return networkTrust.subscribe((state) => {
-      setIsLocked(state.isLocked);
-      setTrustState(state);
-    });
-  }, []);
 
   const handleTogglePomodoro = () => {
     setIsPomodoroVisible((prev) => {
@@ -164,7 +118,7 @@ export default function App() {
     img.onerror = () => setWallpaperLoaded(true);
   }, [wallpaper]);
 
-  // Sync data from local storage
+  // Sync data from local & cloud storage
   const syncData = useCallback(() => {
     const loadedBlocks = getBlocks();
     const loadedTodos = getTodos();
@@ -208,17 +162,12 @@ export default function App() {
         didComboRef.current = false;
       }
 
-      // If user is locked or typing in an input, don't trigger workspace hotkeys
-      if (isLocked || isInputActive()) {
+      if (isInputActive()) {
         return;
       }
 
       // Esc -> Home (or close open overlays)
       if (e.key === 'Escape') {
-        if (isSecurityModalOpen) {
-          setIsSecurityModalOpen(false);
-          return;
-        }
         if (isAppTrayOpen) {
           setIsAppTrayOpen(false);
           return;
@@ -260,7 +209,7 @@ export default function App() {
 
     const handleKeyUp = (e) => {
       if (e.code === 'ShiftRight') {
-        if (!didComboRef.current && !isInputActive() && !isLocked) {
+        if (!didComboRef.current && !isInputActive()) {
           setIsAppTrayOpen((prev) => !prev);
         }
         isRightShiftDownRef.current = false;
@@ -276,11 +225,9 @@ export default function App() {
       window.removeEventListener('keyup', handleKeyUp);
     };
   }, [
-    isLocked,
     isAppTrayOpen,
     isScratchpadOpen,
     isCreateModalOpen,
-    isSecurityModalOpen,
     deletingBlock,
     currentBlockId
   ]);
@@ -355,17 +302,10 @@ export default function App() {
         }}
       />
 
-      {/* Top Controls: Trusted Network Indicator + Wallpaper Shuffle */}
+      {/* Top Controls: Google Auth & Real-Time Sync Indicator + Wallpaper Shuffle */}
       <div className="fixed top-3.5 right-4 sm:top-5 sm:right-6 z-20 flex items-center gap-2">
-        {/* Trusted Wi-Fi Status — Pure Red or Green Dot, Zero Text */}
-        <button
-          onClick={() => setIsSecurityModalOpen(true)}
-          title={trustState.isTrusted ? 'Trusted Wi-Fi (Connected)' : 'Untrusted Network'}
-          aria-label="Security & Trusted Network Status"
-          className="w-8 h-8 sm:w-9 sm:h-9 rounded-full bg-black/40 hover:bg-black/65 border border-white/10 hover:border-white/30 backdrop-blur-md transition-all duration-200 flex items-center justify-center cursor-pointer shadow-lg active:scale-95 select-none"
-        >
-          <span className={`w-2 h-2 rounded-full ${trustState.isTrusted ? 'bg-emerald-400 shadow-[0_0_8px_#34d399]' : 'bg-rose-400 shadow-[0_0_8px_#f87171] animate-pulse'}`} />
-        </button>
+        {/* Google Authentication & Firestore Sync Button */}
+        <GoogleAuthButton />
 
         {/* Wallpaper Shuffle Button — Pure Icon, Zero Text */}
         <button
@@ -379,87 +319,68 @@ export default function App() {
         </button>
       </div>
 
-      {/* ========================================================
-          TRUE DATA PROTECTION LOCK SCREEN (Section 13, 18, 19)
-          When locked, no tasks, blocks, or files are rendered in DOM
-          ======================================================== */}
-      {isLocked ? (
-        <LockScreen onUnlocked={() => setIsLocked(false)} />
-      ) : (
-        /* Unlocked Main Content Area */
-        <main className="relative z-10 flex-1 flex flex-col w-full overflow-x-hidden">
-          {currentBlockId && activeBlock ? (
-            <BlockView
-              block={activeBlock}
-              todos={activeTodos}
-              files={files}
-              loadingTodos={false}
-              loadingFiles={false}
-              wallpaper={wallpaper}
-              onBack={() => setCurrentBlockId(null)}
-              onAddTodo={handleAddTodo}
-              onToggleTodo={handleToggleTodo}
-              onUpdateTodo={handleUpdateTodo}
-              onDeleteTodo={handleDeleteTodo}
-              onUploadFile={handleUploadFile}
-              onDownloadFile={handleDownloadFile}
-              onDeleteFile={handleDeleteFile}
-            />
-          ) : (
-            <MainScreen
-              blocks={blocks}
-              todos={todos}
-              loading={false}
-              wallpaper={wallpaper}
-              onOpenBlock={(block) => setCurrentBlockId(block.id)}
-              onOpenCreateModal={() => setIsCreateModalOpen(true)}
-              onRequestDeleteBlock={(block) => setDeletingBlock(block)}
-            />
-          )}
-        </main>
-      )}
+      {/* Main Content Area */}
+      <main className="relative z-10 flex-1 flex flex-col w-full overflow-x-hidden">
+        {currentBlockId && activeBlock ? (
+          <BlockView
+            block={activeBlock}
+            todos={activeTodos}
+            files={files}
+            loadingTodos={false}
+            loadingFiles={false}
+            wallpaper={wallpaper}
+            onBack={() => setCurrentBlockId(null)}
+            onAddTodo={handleAddTodo}
+            onToggleTodo={handleToggleTodo}
+            onUpdateTodo={handleUpdateTodo}
+            onDeleteTodo={handleDeleteTodo}
+            onUploadFile={handleUploadFile}
+            onDownloadFile={handleDownloadFile}
+            onDeleteFile={handleDeleteFile}
+          />
+        ) : (
+          <MainScreen
+            blocks={blocks}
+            todos={todos}
+            loading={false}
+            wallpaper={wallpaper}
+            onOpenBlock={(block) => setCurrentBlockId(block.id)}
+            onOpenCreateModal={() => setIsCreateModalOpen(true)}
+            onRequestDeleteBlock={(block) => setDeletingBlock(block)}
+          />
+        )}
+      </main>
 
       {/* 3D Transparent Pomodoro Widget (Left Bottom, 25m/5m, Stored) */}
-      {!isLocked && (
-        <PomodoroWidget
-          isVisible={isPomodoroVisible}
-          onClose={() => handleTogglePomodoro()}
-        />
-      )}
+      <PomodoroWidget
+        isVisible={isPomodoroVisible}
+        onClose={() => handleTogglePomodoro()}
+      />
 
       {/* App Tray (Toggled with Right Shift) */}
-      {!isLocked && (
-        <AppTray
-          isOpen={isAppTrayOpen}
-          onClose={() => setIsAppTrayOpen(false)}
-          isPomodoroVisible={isPomodoroVisible}
-          onTogglePomodoro={handleTogglePomodoro}
-          onOpenScratchpad={() => setIsScratchpadOpen(true)}
-          onOpenSecurity={() => setIsSecurityModalOpen(true)}
-          onNextWallpaper={handleNextWallpaper}
-          onTriggerNewItem={() => {
-            if (currentBlockId) {
-              const event = new KeyboardEvent('keydown', { code: 'KeyN', bubbles: true });
-              window.dispatchEvent(event);
-            } else {
-              setIsCreateModalOpen(true);
-            }
-          }}
-          onTriggerUpload={() => {
-            if (currentBlockId) {
-              const event = new KeyboardEvent('keydown', { code: 'KeyO', bubbles: true });
-              window.dispatchEvent(event);
-            }
-          }}
-          activeAmbient={activeAmbient}
-          onToggleAmbient={handleToggleAmbient}
-        />
-      )}
-
-      {/* Security & Trusted Wi-Fi Settings Modal */}
-      <SecuritySettingsModal
-        isOpen={isSecurityModalOpen}
-        onClose={() => setIsSecurityModalOpen(false)}
+      <AppTray
+        isOpen={isAppTrayOpen}
+        onClose={() => setIsAppTrayOpen(false)}
+        isPomodoroVisible={isPomodoroVisible}
+        onTogglePomodoro={handleTogglePomodoro}
+        onOpenScratchpad={() => setIsScratchpadOpen(true)}
+        onNextWallpaper={handleNextWallpaper}
+        onTriggerNewItem={() => {
+          if (currentBlockId) {
+            const event = new KeyboardEvent('keydown', { code: 'KeyN', bubbles: true });
+            window.dispatchEvent(event);
+          } else {
+            setIsCreateModalOpen(true);
+          }
+        }}
+        onTriggerUpload={() => {
+          if (currentBlockId) {
+            const event = new KeyboardEvent('keydown', { code: 'KeyO', bubbles: true });
+            window.dispatchEvent(event);
+          }
+        }}
+        activeAmbient={activeAmbient}
+        onToggleAmbient={handleToggleAmbient}
       />
 
       {/* Quick Scratchpad Notes Modal */}

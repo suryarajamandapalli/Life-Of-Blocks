@@ -11,7 +11,8 @@ import {
   query, 
   orderBy, 
   serverTimestamp,
-  getDocs
+  getDocs,
+  enableIndexedDbPersistence
 } from 'firebase/firestore';
 import { 
   getStorage, 
@@ -23,13 +24,25 @@ import {
 import { 
   getAuth, 
   signInWithPopup, 
+  signInWithRedirect,
+  getRedirectResult,
   GoogleAuthProvider, 
-  signInAnonymously, 
   signOut, 
   onAuthStateChanged 
 } from 'firebase/auth';
+import { uploadToCloudinary, getCloudinaryCloudName } from './cloudinary';
 
-// 1. Get Firebase Config from ENV or localStorage
+// Official Production Firebase Configuration for LIFE OF BLOCKS
+export const DEFAULT_FIREBASE_CONFIG = {
+  apiKey: "AIzaSyCDD1dWKCybEZH9pQJuFpqxILgopEFFMpM",
+  authDomain: "life-of-blocks.firebaseapp.com",
+  projectId: "life-of-blocks",
+  storageBucket: "life-of-blocks.firebasestorage.app",
+  messagingSenderId: "853169901922",
+  appId: "1:853169901922:web:85d774bbfc8e7331329c3b",
+  measurementId: "G-GSHY47NMZB"
+};
+
 export function getFirebaseConfig() {
   const envConfig = {
     apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
@@ -38,10 +51,11 @@ export function getFirebaseConfig() {
     storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET,
     messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID,
     appId: import.meta.env.VITE_FIREBASE_APP_ID,
+    measurementId: import.meta.env.VITE_FIREBASE_MEASUREMENT_ID,
   };
 
   if (envConfig.apiKey && envConfig.projectId) {
-    return envConfig;
+    return { ...DEFAULT_FIREBASE_CONFIG, ...envConfig };
   }
 
   try {
@@ -49,28 +63,14 @@ export function getFirebaseConfig() {
     if (saved) {
       const parsed = JSON.parse(saved);
       if (parsed.apiKey && parsed.projectId) {
-        return parsed;
+        return { ...DEFAULT_FIREBASE_CONFIG, ...parsed };
       }
     }
   } catch (e) {
-    console.error('Failed to parse saved Firebase config', e);
+    console.debug('No custom Firebase config saved; using default', e);
   }
 
-  return null;
-}
-
-export function saveFirebaseConfig(config) {
-  try {
-    localStorage.setItem('lob_firebase_config', JSON.stringify(config));
-    window.location.reload();
-  } catch (e) {
-    console.error('Error saving config', e);
-  }
-}
-
-export function clearFirebaseConfig() {
-  localStorage.removeItem('lob_firebase_config');
-  window.location.reload();
+  return DEFAULT_FIREBASE_CONFIG;
 }
 
 let app = null;
@@ -78,40 +78,67 @@ let db = null;
 let storage = null;
 let auth = null;
 
-const activeConfig = getFirebaseConfig();
-export const isFirebaseConfigured = Boolean(activeConfig && activeConfig.apiKey && activeConfig.projectId);
+try {
+  const activeConfig = getFirebaseConfig();
+  app = getApps().length > 0 ? getApp() : initializeApp(activeConfig);
+  db = getFirestore(app);
+  storage = getStorage(app);
+  auth = getAuth(app);
 
-if (isFirebaseConfigured) {
-  try {
-    app = getApps().length > 0 ? getApp() : initializeApp(activeConfig);
-    db = getFirestore(app);
-    storage = getStorage(app);
-    auth = getAuth(app);
-  } catch (error) {
-    console.error('Firebase initialization error:', error);
+  // Enable offline persistence in browser environments
+  if (typeof window !== 'undefined' && db) {
+    enableIndexedDbPersistence(db).catch((err) => {
+      if (err.code === 'failed-precondition') {
+        console.debug('Multiple tabs open, Firestore persistence enabled in first tab only');
+      } else if (err.code === 'unimplemented') {
+        console.debug('Browser does not support Firestore persistence');
+      }
+    });
   }
+} catch (error) {
+  console.error('Firebase initialization error:', error);
 }
 
 export { app, db, storage, auth };
 
-// AUTH HELPERS
+// ========================================================
+// GOOGLE AUTHENTICATION HELPERS
+// ========================================================
+
 export function subscribeAuth(callback) {
   if (!auth) {
     callback(null);
     return () => {};
   }
+
+  // Handle redirect result if user returned from Google redirect sign-in
+  if (typeof window !== 'undefined') {
+    getRedirectResult(auth).catch((err) => {
+      console.debug('No pending redirect result:', err);
+    });
+  }
+
   return onAuthStateChanged(auth, callback);
 }
 
 export async function signInWithGoogle() {
-  if (!auth) throw new Error('Firebase Auth not configured');
+  if (!auth) throw new Error('Firebase Auth not initialized');
   const provider = new GoogleAuthProvider();
-  return signInWithPopup(auth, provider);
-}
+  provider.setCustomParameters({ prompt: 'select_account' });
 
-export async function signInGuest() {
-  if (!auth) throw new Error('Firebase Auth not configured');
-  return signInAnonymously(auth);
+  try {
+    return await signInWithPopup(auth, provider);
+  } catch (popupErr) {
+    // If popup was blocked (e.g. mobile Safari / WebView), fallback to redirect
+    if (
+      popupErr.code === 'auth/popup-blocked' ||
+      popupErr.code === 'auth/popup-closed-by-user' ||
+      popupErr.code === 'auth/operation-not-supported-in-this-environment'
+    ) {
+      return await signInWithRedirect(auth, provider);
+    }
+    throw popupErr;
+  }
 }
 
 export async function signOutUser() {
@@ -119,11 +146,17 @@ export async function signOutUser() {
   return signOut(auth);
 }
 
-// REALTIME FIRESTORE LISTENERS
+export function getCurrentUser() {
+  return auth?.currentUser || null;
+}
+
+// ========================================================
+// FIRESTORE REAL-TIME SYNC: BLOCKS
+// ========================================================
 
 /**
- * Subscribe to all Blocks for a user.
- * users/{uid}/blocks/{blockId}
+ * Subscribe to all Blocks for a user in Firestore
+ * Collection: users/{uid}/blocks
  */
 export function subscribeBlocks(uid, callback) {
   if (!db || !uid) return () => {};
@@ -131,18 +164,17 @@ export function subscribeBlocks(uid, callback) {
   const q = query(blocksRef, orderBy('createdAt', 'desc'));
 
   return onSnapshot(q, (snapshot) => {
-    const blocks = snapshot.docs.map(doc => ({
-      id: doc.id,
-      ...doc.data()
+    const blocks = snapshot.docs.map(docSnap => ({
+      id: docSnap.id,
+      ...docSnap.data()
     }));
     callback(blocks);
   }, (err) => {
-    console.error('Blocks listener error:', err);
-    // Fallback query without orderBy if index is building
-    const fallbackSub = onSnapshot(blocksRef, (fallbackSnap) => {
-      const blocks = fallbackSnap.docs.map(doc => ({
-        id: doc.id,
-        ...doc.data()
+    console.warn('Blocks query fallback:', err);
+    return onSnapshot(blocksRef, (fallbackSnap) => {
+      const blocks = fallbackSnap.docs.map(docSnap => ({
+        id: docSnap.id,
+        ...docSnap.data()
       })).sort((a, b) => {
         const timeA = a.createdAt?.toMillis?.() || a.createdAt || 0;
         const timeB = b.createdAt?.toMillis?.() || b.createdAt || 0;
@@ -150,258 +182,255 @@ export function subscribeBlocks(uid, callback) {
       });
       callback(blocks);
     });
-    return fallbackSub;
   });
 }
 
-/**
- * Create a new Block
- */
-export async function createBlock(uid, name) {
+export async function createFirestoreBlock(uid, name, initialId) {
   if (!db || !uid) throw new Error('Database not initialized');
   const blocksRef = collection(db, 'users', uid, 'blocks');
-  const newBlockDoc = await addDoc(blocksRef, {
+  
+  const blockData = {
     name: name.trim(),
-    createdAt: serverTimestamp(),
-    updatedAt: serverTimestamp(),
+    createdAt: Date.now(),
+    updatedAt: Date.now(),
     completedTodos: 0,
     totalTodos: 0
-  });
-  return newBlockDoc.id;
+  };
+
+  if (initialId) {
+    const blockDoc = doc(blocksRef, initialId);
+    await setDoc(blockDoc, blockData);
+    return initialId;
+  } else {
+    const newDoc = await addDoc(blocksRef, blockData);
+    return newDoc.id;
+  }
 }
 
-/**
- * Delete a Block and all its subcollections
- */
-export async function deleteBlock(uid, blockId) {
+export async function updateFirestoreBlock(uid, blockId, updates) {
+  if (!db || !uid || !blockId) return;
+  const blockRef = doc(db, 'users', uid, 'blocks', blockId);
+  return updateDoc(blockRef, {
+    ...updates,
+    updatedAt: Date.now()
+  });
+}
+
+export async function deleteFirestoreBlock(uid, blockId) {
   if (!db || !uid || !blockId) return;
 
-  // 1. Delete todos subcollection
+  // 1. Delete all todos under this block
   try {
-    const todosRef = collection(db, 'users', uid, 'blocks', blockId, 'todos');
+    const todosRef = collection(db, 'users', uid, 'todos');
     const todosSnap = await getDocs(todosRef);
-    const deleteTodosPromises = todosSnap.docs.map(d => deleteDoc(d.ref));
-    await Promise.all(deleteTodosPromises);
+    const deleteBatch = todosSnap.docs
+      .filter(d => d.data().blockId === blockId)
+      .map(d => deleteDoc(d.ref));
+    await Promise.all(deleteBatch);
   } catch (e) {
-    console.warn('Error deleting sub-todos:', e);
+    console.warn('Error deleting associated todos:', e);
   }
 
-  // 2. Delete files subcollection and storage objects
+  // 2. Delete all files metadata under this block
   try {
-    const filesRef = collection(db, 'users', uid, 'blocks', blockId, 'files');
+    const filesRef = collection(db, 'users', uid, 'files');
     const filesSnap = await getDocs(filesRef);
-    for (const fDoc of filesSnap.docs) {
-      const fData = fDoc.data();
-      if (fData.storagePath && storage) {
-        try {
-          const fileStorageRef = ref(storage, fData.storagePath);
-          await deleteObject(fileStorageRef);
-        } catch (storageErr) {
-          console.warn('Storage delete warning:', storageErr);
-        }
-      }
-      await deleteDoc(fDoc.ref);
-    }
+    const deleteFilesBatch = filesSnap.docs
+      .filter(d => d.data().blockId === blockId)
+      .map(d => deleteDoc(d.ref));
+    await Promise.all(deleteFilesBatch);
   } catch (e) {
-    console.warn('Error deleting sub-files:', e);
+    console.warn('Error deleting associated files:', e);
   }
 
-  // 3. Delete block document
+  // 3. Delete block doc
   const blockRef = doc(db, 'users', uid, 'blocks', blockId);
   await deleteDoc(blockRef);
 }
 
-/**
- * Subscribe to Todos for a Block
- * users/{uid}/blocks/{blockId}/todos/{todoId}
- */
-export function subscribeTodos(uid, blockId, callback) {
-  if (!db || !uid || !blockId) return () => {};
-  const todosRef = collection(db, 'users', uid, 'blocks', blockId, 'todos');
-  const q = query(todosRef, orderBy('createdAt', 'asc'));
+// ========================================================
+// FIRESTORE REAL-TIME SYNC: TODOS
+// ========================================================
 
-  return onSnapshot(q, (snapshot) => {
-    const todos = snapshot.docs.map(doc => ({
-      id: doc.id,
-      ...doc.data()
-    }));
+/**
+ * Subscribe to all Todos for a user across all blocks
+ * Collection: users/{uid}/todos
+ */
+export function subscribeTodos(uid, callback) {
+  if (!db || !uid) return () => {};
+  const todosRef = collection(db, 'users', uid, 'todos');
+
+  return onSnapshot(todosRef, (snapshot) => {
+    const todos = snapshot.docs.map(docSnap => ({
+      id: docSnap.id,
+      ...docSnap.data()
+    })).sort((a, b) => (a.createdAt || 0) - (b.createdAt || 0));
     callback(todos);
-    
-    // Sync completion status on the parent block
-    const completedCount = todos.filter(t => t.completed).length;
-    const totalCount = todos.length;
-    syncBlockCounts(uid, blockId, completedCount, totalCount);
   }, (err) => {
     console.error('Todos listener error:', err);
-    // Fallback without ordering
-    return onSnapshot(todosRef, (snap) => {
-      const todos = snap.docs.map(doc => ({
-        id: doc.id,
-        ...doc.data()
-      })).sort((a, b) => {
-        const timeA = a.createdAt?.toMillis?.() || a.createdAt || 0;
-        const timeB = b.createdAt?.toMillis?.() || b.createdAt || 0;
-        return timeA - timeB;
-      });
-      callback(todos);
-    });
   });
 }
 
-/**
- * Sync counts on parent block
- */
-async function syncBlockCounts(uid, blockId, completedCount, totalCount) {
-  if (!db || !uid || !blockId) return;
-  try {
-    const blockRef = doc(db, 'users', uid, 'blocks', blockId);
-    await updateDoc(blockRef, {
-      completedTodos: completedCount,
-      totalTodos: totalCount,
-      updatedAt: serverTimestamp()
-    });
-  } catch {
-    // Non-critical background sync
+export async function addFirestoreTodo(uid, blockId, title, initialId) {
+  if (!db || !uid || !blockId) throw new Error('Database not initialized');
+  const todosRef = collection(db, 'users', uid, 'todos');
+  
+  const todoData = {
+    blockId,
+    title: title.trim(),
+    completed: false,
+    createdAt: Date.now(),
+    updatedAt: Date.now()
+  };
+
+  if (initialId) {
+    const todoDoc = doc(todosRef, initialId);
+    await setDoc(todoDoc, todoData);
+    return { id: initialId, ...todoData };
+  } else {
+    const newDoc = await addDoc(todosRef, todoData);
+    return { id: newDoc.id, ...todoData };
   }
 }
 
-/**
- * Add a Todo
- */
-export async function addTodo(uid, blockId, title) {
-  if (!db || !uid || !blockId) throw new Error('Database not initialized');
-  const todosRef = collection(db, 'users', uid, 'blocks', blockId, 'todos');
-  return addDoc(todosRef, {
-    title: title.trim(),
-    completed: false,
-    createdAt: serverTimestamp(),
-    updatedAt: serverTimestamp()
-  });
-}
-
-/**
- * Update a Todo (toggle completed or edit title)
- */
-export async function updateTodo(uid, blockId, todoId, updates) {
-  if (!db || !uid || !blockId || !todoId) return;
-  const todoRef = doc(db, 'users', uid, 'blocks', blockId, 'todos', todoId);
+export async function updateFirestoreTodo(uid, todoId, updates) {
+  if (!db || !uid || !todoId) return;
+  const todoRef = doc(db, 'users', uid, 'todos', todoId);
   return updateDoc(todoRef, {
     ...updates,
-    updatedAt: serverTimestamp()
+    updatedAt: Date.now()
   });
 }
 
-/**
- * Delete a Todo
- */
-export async function deleteTodo(uid, blockId, todoId) {
-  if (!db || !uid || !blockId || !todoId) return;
-  const todoRef = doc(db, 'users', uid, 'blocks', blockId, 'todos', todoId);
+export async function deleteFirestoreTodo(uid, todoId) {
+  if (!db || !uid || !todoId) return;
+  const todoRef = doc(db, 'users', uid, 'todos', todoId);
   return deleteDoc(todoRef);
 }
 
-/**
- * Subscribe to Files for a Block
- * users/{uid}/blocks/{blockId}/files/{fileId}
- */
-export function subscribeFiles(uid, blockId, callback) {
-  if (!db || !uid || !blockId) return () => {};
-  const filesRef = collection(db, 'users', uid, 'blocks', blockId, 'files');
-  const q = query(filesRef, orderBy('createdAt', 'desc'));
+// ========================================================
+// FIRESTORE REAL-TIME SYNC & STORAGE: FILES
+// ========================================================
 
-  return onSnapshot(q, (snapshot) => {
-    const files = snapshot.docs.map(doc => ({
-      id: doc.id,
-      ...doc.data()
-    }));
+/**
+ * Subscribe to all Files metadata for a user
+ * Collection: users/{uid}/files
+ */
+export function subscribeFiles(uid, callback) {
+  if (!db || !uid) return () => {};
+  const filesRef = collection(db, 'users', uid, 'files');
+
+  return onSnapshot(filesRef, (snapshot) => {
+    const files = snapshot.docs.map(docSnap => ({
+      id: docSnap.id,
+      ...docSnap.data()
+    })).sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
     callback(files);
   }, (err) => {
     console.error('Files listener error:', err);
-    return onSnapshot(filesRef, (snap) => {
-      const files = snap.docs.map(doc => ({
-        id: doc.id,
-        ...doc.data()
-      })).sort((a, b) => {
-        const timeA = a.createdAt?.toMillis?.() || a.createdAt || 0;
-        const timeB = b.createdAt?.toMillis?.() || b.createdAt || 0;
-        return timeB - timeA;
-      });
-      callback(files);
-    });
   });
 }
 
 /**
- * Upload a File to Firebase Storage and save metadata in Firestore
- * users/{uid}/blocks/{blockId}/files/{fileId}_{filename}
+ * Upload file to Cloudinary CDN (or Firebase Storage fallback)
+ * and record metadata in Firestore
  */
-export function uploadFile(uid, blockId, file, onProgress) {
-  if (!storage || !db || !uid || !blockId) {
-    throw new Error('Storage or database not initialized');
+export async function uploadFileToCloud(uid, blockId, file, onProgress) {
+  if (!uid || !blockId || !file) {
+    throw new Error('Missing upload parameters');
   }
 
-  return new Promise((resolve, reject) => {
-    const filesRef = collection(db, 'users', uid, 'blocks', blockId, 'files');
-    const newFileDoc = doc(filesRef);
-    const fileId = newFileDoc.id;
+  let downloadURL = null;
+  let cdnProvider = 'firebase';
+  let storagePath = null;
 
-    // Clean filename
+  // 1. Try Cloudinary CDN first if cloud name is available
+  const cloudName = getCloudinaryCloudName();
+  if (cloudName) {
+    try {
+      const cdnResult = await uploadToCloudinary(file, `lob_${uid}`, onProgress);
+      downloadURL = cdnResult.url;
+      cdnProvider = 'cloudinary';
+      storagePath = cdnResult.publicId;
+    } catch (cdnErr) {
+      console.warn('Cloudinary upload deferred to Firebase Storage:', cdnErr);
+    }
+  }
+
+  // 2. Fallback to Firebase Cloud Storage CDN (always available with user config)
+  if (!downloadURL && storage) {
     const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, '_');
-    const storagePath = `users/${uid}/blocks/${blockId}/files/${fileId}_${safeName}`;
+    const fileId = 'f_' + Date.now() + '_' + Math.random().toString(36).substring(2, 7);
+    storagePath = `users/${uid}/blocks/${blockId}/files/${fileId}_${safeName}`;
     const fileStorageRef = ref(storage, storagePath);
 
     const uploadTask = uploadBytesResumable(fileStorageRef, file, {
       contentType: file.type || 'application/octet-stream',
     });
 
-    uploadTask.on(
-      'state_changed',
-      (snapshot) => {
-        const progress = Math.round((snapshot.bytesTransferred / snapshot.totalBytes) * 100);
-        if (onProgress) onProgress(progress);
-      },
-      (error) => {
-        console.error('Upload failed:', error);
-        reject(error);
-      },
-      async () => {
-        try {
-          const downloadURL = await getDownloadURL(uploadTask.snapshot.ref);
-          await setDoc(newFileDoc, {
-            name: file.name,
-            storagePath: storagePath,
-            downloadURL: downloadURL,
-            mimeType: file.type || 'application/octet-stream',
-            size: file.size,
-            createdAt: serverTimestamp()
-          });
-          resolve({ id: fileId, name: file.name, downloadURL });
-        } catch (err) {
-          console.error('Error writing file metadata:', err);
-          reject(err);
+    await new Promise((resolve, reject) => {
+      uploadTask.on(
+        'state_changed',
+        (snapshot) => {
+          if (snapshot.totalBytes > 0) {
+            const pct = Math.round((snapshot.bytesTransferred / snapshot.totalBytes) * 100);
+            if (onProgress) onProgress(pct);
+          }
+        },
+        (error) => reject(error),
+        async () => {
+          try {
+            downloadURL = await getDownloadURL(uploadTask.snapshot.ref);
+            resolve();
+          } catch (e) {
+            reject(e);
+          }
         }
-      }
-    );
-  });
+      );
+    });
+  }
+
+  // 3. Save file metadata in Firestore
+  const fileId = 'file_' + Date.now() + '_' + Math.random().toString(36).substring(2, 7);
+  const fileMeta = {
+    id: fileId,
+    blockId,
+    name: file.name,
+    size: file.size,
+    mimeType: file.type || 'application/octet-stream',
+    downloadURL: downloadURL || '',
+    storagePath: storagePath || '',
+    cdnProvider,
+    createdAt: Date.now()
+  };
+
+  if (db && uid) {
+    const fileDoc = doc(db, 'users', uid, 'files', fileId);
+    await setDoc(fileDoc, fileMeta);
+  }
+
+  return fileMeta;
 }
 
 /**
- * Delete a File from both Firebase Storage and Firestore
+ * Delete a file from Cloud Storage & Firestore
  */
-export async function deleteFile(uid, blockId, file) {
-  if (!db || !uid || !blockId || !file) return;
+export async function deleteFileFromCloud(uid, file) {
+  if (!uid || !file) return;
 
-  // 1. Delete from Firebase Storage
-  if (file.storagePath && storage) {
+  // 1. Delete from Firebase Storage if applicable
+  if (file.storagePath && file.cdnProvider === 'firebase' && storage) {
     try {
       const fileStorageRef = ref(storage, file.storagePath);
       await deleteObject(fileStorageRef);
-    } catch (err) {
-      console.warn('Storage deletion warning (might already be deleted):', err);
+    } catch (e) {
+      console.warn('Storage deletion warning:', e);
     }
   }
 
-  // 2. Delete metadata from Firestore
-  const fileDocRef = doc(db, 'users', uid, 'blocks', blockId, 'files', file.id);
-  await deleteDoc(fileDocRef);
+  // 2. Delete metadata doc from Firestore
+  if (db) {
+    const fileDoc = doc(db, 'users', uid, 'files', file.id);
+    await deleteDoc(fileDoc).catch((e) => console.warn('File doc delete warning:', e));
+  }
 }
