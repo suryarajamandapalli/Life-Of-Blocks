@@ -4,7 +4,7 @@ import { sound } from '../services/sound';
 
 const STORAGE_KEY = 'lob_retro_pomodoro_state_v2';
 
-export default function PomodoroWidget({ isVisible, onClose }) {
+export default function PomodoroWidget({ isVisible, onClose, onToggleSpotify, isSpotifyVisible }) {
   // Initialize state lazily from localStorage so page reload NEVER resets to default 25:00
   const [timerState, setTimerState] = useState(() => {
     try {
@@ -268,7 +268,7 @@ export default function PomodoroWidget({ isVisible, onClose }) {
 
   return (
     <div
-      className="fixed bottom-5 left-4 sm:left-6 z-40 select-none animate-modal-in transition-all duration-300"
+      className="relative select-none animate-modal-in transition-all duration-300 w-[276px] sm:w-[290px] flex-shrink-0"
       style={{ perspective: '1000px' }}
     >
       {/* ========================================================
@@ -629,6 +629,23 @@ export default function PomodoroWidget({ isVisible, onClose }) {
           >
             <SlidersHorizontal className="w-3.5 h-3.5" />
           </button>
+
+          {/* Spotify Player Toggle Button */}
+          {onToggleSpotify && (
+            <button
+              onClick={onToggleSpotify}
+              title={isSpotifyVisible ? 'Close Spotify Player (S)' : 'Open Spotify Player (S)'}
+              className={`w-7 h-7 rounded-lg border border-black/20 flex items-center justify-center cursor-pointer transition-colors shadow-inner flex-shrink-0 ${
+                isSpotifyVisible 
+                  ? 'bg-[#1DB954]/25 text-[#1DB954] border-[#1DB954]/50 shadow-[0_0_8px_rgba(29,185,84,0.3)]' 
+                  : 'bg-[#27292e] hover:bg-[#32353c] text-white/75 hover:text-[#1DB954]'
+              }`}
+            >
+              <svg viewBox="0 0 24 24" className="w-3.5 h-3.5 fill-current" shapeRendering="geometricPrecision">
+                <path d="M12 2C6.477 2 2 6.477 2 12c0 5.524 4.477 10 10 10s10-4.476 10-10c0-5.523-4.477-10-10-10zm4.586 14.424a.623.623 0 01-.857.207c-2.348-1.434-5.304-1.758-8.786-.963a.624.624 0 11-.278-1.218c3.808-.87 7.076-.502 9.714 1.117a.625.625 0 01.207.857zm1.225-2.723a.78.78 0 01-1.072.257c-2.687-1.652-6.784-2.131-9.964-1.166a.78.78 0 11-.453-1.493c3.633-1.103 8.147-.568 11.232 1.33a.78.78 0 01.257 1.072zm.105-2.836C14.692 8.97 9.4 8.795 6.34 9.724a.936.936 0 11-.546-1.79c3.51-1.066 9.356-.864 13.064 1.337a.936.936 0 01-1.073 1.594z"/>
+              </svg>
+            </button>
+          )}
 
           {/* Perforated Dot Matrix Speaker Grille */}
           <div className="flex-1 flex flex-col justify-center gap-[3px] py-1 opacity-70">

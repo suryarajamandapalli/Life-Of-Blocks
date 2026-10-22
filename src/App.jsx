@@ -27,6 +27,7 @@ import BlockView from './components/BlockView';
 import CreateBlockModal from './components/CreateBlockModal';
 import ConfirmModal from './components/ConfirmModal';
 import PomodoroWidget from './components/PomodoroWidget';
+import SpotifyWidget from './components/SpotifyWidget';
 import AppTray from './components/AppTray';
 import QuickNotesModal from './components/QuickNotesModal';
 import GoogleAuthButton from './components/GoogleAuthButton';
@@ -83,6 +84,27 @@ export default function App() {
         localStorage.setItem('lob_pomodoro_visible', String(next));
       } catch (e) {
         console.warn('Could not save pomodoro visibility:', e);
+      }
+      return next;
+    });
+  };
+
+  // Spotify Web Player Widget (toggled with S key or button)
+  const [isSpotifyVisible, setIsSpotifyVisible] = useState(() => {
+    try {
+      return localStorage.getItem('lob_spotify_visible') === 'true';
+    } catch {
+      return false;
+    }
+  });
+
+  const handleToggleSpotify = () => {
+    setIsSpotifyVisible((prev) => {
+      const next = !prev;
+      try {
+        localStorage.setItem('lob_spotify_visible', String(next));
+      } catch (e) {
+        console.warn('Could not save spotify visibility:', e);
       }
       return next;
     });
@@ -261,6 +283,10 @@ export default function App() {
           setIsCreateModalOpen(false);
           return;
         }
+        if (isSpotifyVisible) {
+          setIsSpotifyVisible(false);
+          return;
+        }
         if (deletingBlock) {
           setDeletingBlock(null);
           return;
@@ -275,6 +301,13 @@ export default function App() {
         e.preventDefault();
         if (isRightShiftDownRef.current) didComboRef.current = true;
         handleTogglePomodoro();
+        return;
+      }
+
+      if (e.code === 'KeyS') {
+        e.preventDefault();
+        if (isRightShiftDownRef.current) didComboRef.current = true;
+        handleToggleSpotify();
         return;
       }
 
@@ -428,11 +461,35 @@ export default function App() {
         )}
       </main>
 
-      {/* 3D Transparent Pomodoro Widget (Left Bottom, 25m/5m, Stored) */}
-      <PomodoroWidget
-        isVisible={isPomodoroVisible}
-        onClose={() => handleTogglePomodoro()}
-      />
+      {/* Floating Widgets Console (Bottom-Left)
+          - Desktop (sm+): Spotify pops up directly ABOVE Pomodoro with the exact same width
+          - Mobile (<sm): Pomodoro and Spotify sit SIDE BY SIDE with smooth horizontal scroll */}
+      {(isPomodoroVisible || isSpotifyVisible) && (
+        <div 
+          className="fixed bottom-3 sm:bottom-5 left-3 sm:left-6 z-40 max-w-[calc(100vw-24px)] flex flex-row sm:flex-col-reverse items-end sm:items-start gap-2.5 sm:gap-3 overflow-x-auto sm:overflow-visible pb-1 select-none pointer-events-none"
+          style={{ scrollbarWidth: 'none', msOverflowStyle: 'none' }}
+        >
+          {isPomodoroVisible && (
+            <div className="pointer-events-auto flex-shrink-0">
+              <PomodoroWidget
+                isVisible={true}
+                onClose={handleTogglePomodoro}
+                onToggleSpotify={handleToggleSpotify}
+                isSpotifyVisible={isSpotifyVisible}
+              />
+            </div>
+          )}
+
+          {isSpotifyVisible && (
+            <div className="pointer-events-auto flex-shrink-0">
+              <SpotifyWidget
+                isVisible={true}
+                onClose={handleToggleSpotify}
+              />
+            </div>
+          )}
+        </div>
+      )}
 
       {/* App Tray (Toggled with Right Shift) */}
       <AppTray
@@ -440,6 +497,8 @@ export default function App() {
         onClose={() => setIsAppTrayOpen(false)}
         isPomodoroVisible={isPomodoroVisible}
         onTogglePomodoro={handleTogglePomodoro}
+        isSpotifyVisible={isSpotifyVisible}
+        onToggleSpotify={handleToggleSpotify}
         onOpenScratchpad={() => setIsScratchpadOpen(true)}
         onNextWallpaper={handleNextWallpaper}
         onTriggerNewItem={() => {

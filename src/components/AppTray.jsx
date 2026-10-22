@@ -8,7 +8,8 @@ import {
   Plus, 
   RotateCw, 
   VolumeX,
-  Cloud
+  Cloud,
+  Music2
 } from 'lucide-react';
 import { subscribeAuth, signInWithGoogle } from '../services/firebase';
 
@@ -17,6 +18,8 @@ export default function AppTray({
   onClose,
   onTogglePomodoro,
   isPomodoroVisible,
+  onToggleSpotify,
+  isSpotifyVisible,
   onOpenScratchpad,
   onNextWallpaper,
   onTriggerNewItem,
@@ -93,7 +96,7 @@ export default function AppTray({
         </div>
 
         {/* Apps Grid */}
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 sm:gap-3 mb-4">
+        <div className="grid grid-cols-2 sm:grid-cols-5 gap-2.5 sm:gap-3 mb-4">
           {/* App 1: 3D Pomodoro Timer */}
           <button
             onClick={() => {
@@ -112,6 +115,27 @@ export default function AppTray({
             <span className="text-xs font-semibold tracking-wide">Pomodoro 3D</span>
             <span className="text-[10px] text-white/40 font-mono mt-0.5">
               {isPomodoroVisible ? 'Active • 25m/5m' : 'Press P'}
+            </span>
+          </button>
+
+          {/* App 2: Spotify Web Player */}
+          <button
+            onClick={() => {
+              onToggleSpotify?.();
+              onClose();
+            }}
+            className={`group flex flex-col items-center justify-center p-3.5 rounded-2xl border transition-all duration-200 cursor-pointer ${
+              isSpotifyVisible
+                ? 'bg-[#1DB954]/20 border-[#1DB954]/40 text-emerald-200 shadow-md'
+                : 'bg-white/[0.04] hover:bg-white/[0.09] border-white/10 text-white/80 hover:text-white hover:-translate-y-0.5'
+            }`}
+          >
+            <div className="w-10 h-10 rounded-xl bg-[#1DB954]/20 border border-[#1DB954]/30 flex items-center justify-center mb-2 group-hover:scale-105 transition-transform text-[#1DB954]">
+              <Music2 className="w-5 h-5 stroke-[2.2]" />
+            </div>
+            <span className="text-xs font-semibold tracking-wide">Spotify Lo-Fi</span>
+            <span className="text-[10px] text-white/40 font-mono mt-0.5">
+              {isSpotifyVisible ? 'Active' : 'Press S'}
             </span>
           </button>
 
