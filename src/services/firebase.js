@@ -10,7 +10,6 @@ import {
   onSnapshot, 
   query, 
   orderBy, 
-  serverTimestamp,
   getDocs,
   enableIndexedDbPersistence
 } from 'firebase/firestore';
@@ -24,12 +23,15 @@ import {
 import { 
   getAuth, 
   signInWithPopup, 
-  signInWithRedirect,
-  getRedirectResult,
+  signInWithCredential,
   GoogleAuthProvider, 
   signOut, 
-  onAuthStateChanged 
+  onAuthStateChanged,
+  signInWithEmailAndPassword,
+  createUserWithEmailAndPassword
 } from 'firebase/auth';
+import { Capacitor } from '@capacitor/core';
+import { FirebaseAuthentication } from '@capacitor-firebase/authentication';
 import { uploadToCloudinary, getCloudinaryCloudName } from './cloudinary';
 
 // Official Production Firebase Configuration for LIFE OF BLOCKS
@@ -111,39 +113,70 @@ export function subscribeAuth(callback) {
     return () => {};
   }
 
-  // Handle redirect result if user returned from Google redirect sign-in
-  if (typeof window !== 'undefined') {
-    getRedirectResult(auth).catch((err) => {
-      console.debug('No pending redirect result:', err);
-    });
+  const unsubWeb = onAuthStateChanged(auth, callback);
+
+  let unsubNative = null;
+  if (Capacitor.isNativePlatform()) {
+    FirebaseAuthentication.addListener('authStateChange', (change) => {
+      if (change?.user) {
+        callback(change.user);
+      }
+    }).then(listener => {
+      unsubNative = listener;
+    }).catch(() => {});
   }
 
-  return onAuthStateChanged(auth, callback);
+  return () => {
+    unsubWeb();
+    if (unsubNative && typeof unsubNative.remove === 'function') {
+      unsubNative.remove();
+    }
+  };
 }
 
 export async function signInWithGoogle() {
   if (!auth) throw new Error('Firebase Auth not initialized');
-  const provider = new GoogleAuthProvider();
-  provider.setCustomParameters({ prompt: 'select_account' });
 
-  try {
-    return await signInWithPopup(auth, provider);
-  } catch (popupErr) {
-    // If popup was blocked (e.g. mobile Safari / WebView), fallback to redirect
-    if (
-      popupErr.code === 'auth/popup-blocked' ||
-      popupErr.code === 'auth/popup-closed-by-user' ||
-      popupErr.code === 'auth/operation-not-supported-in-this-environment'
-    ) {
-      return await signInWithRedirect(auth, provider);
+  if (Capacitor.isNativePlatform()) {
+    // Native Android / iOS Flow via Capawesome Native SDK
+    // Shows the native Android Google Account picker dialog!
+    // No browser redirect, no sessionStorage issues, zero white screen!
+    const result = await FirebaseAuthentication.signInWithGoogle();
+    const idToken = result.credential?.idToken;
+    if (idToken) {
+      const credential = GoogleAuthProvider.credential(idToken);
+      const userCredential = await signInWithCredential(auth, credential);
+      return userCredential.user;
     }
-    throw popupErr;
+    return result.user;
+  } else {
+    // Web environment: Standard Firebase Google popup
+    const provider = new GoogleAuthProvider();
+    provider.setCustomParameters({ prompt: 'select_account' });
+    const userCredential = await signInWithPopup(auth, provider);
+    return userCredential.user;
   }
 }
 
+export async function signInWithEmail(email, password) {
+  if (!auth) throw new Error('Firebase Auth not initialized');
+  const userCredential = await signInWithEmailAndPassword(auth, email.trim(), password);
+  return userCredential.user;
+}
+
+export async function signUpWithEmail(email, password) {
+  if (!auth) throw new Error('Firebase Auth not initialized');
+  const userCredential = await createUserWithEmailAndPassword(auth, email.trim(), password);
+  return userCredential.user;
+}
+
 export async function signOutUser() {
-  if (!auth) return;
-  return signOut(auth);
+  if (Capacitor.isNativePlatform()) {
+    await FirebaseAuthentication.signOut().catch(() => {});
+  }
+  if (auth) {
+    await signOut(auth).catch(() => {});
+  }
 }
 
 export function getCurrentUser() {
