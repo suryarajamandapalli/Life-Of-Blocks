@@ -117,7 +117,7 @@ export default function StarredWallpapersModal({
       onClick={onClose}
     >
       <div 
-        className="w-full max-w-3xl max-h-[90vh] rounded-[24px] border border-white/20 shadow-2xl flex flex-col overflow-hidden relative"
+        className="w-full max-w-3xl max-h-[92vh] sm:max-h-[90vh] rounded-[22px] sm:rounded-[24px] border border-white/20 shadow-2xl flex flex-col overflow-hidden relative"
         style={{
           background: 'linear-gradient(135deg, rgba(18, 22, 30, 0.96) 0%, rgba(10, 12, 16, 0.98) 100%)',
           boxShadow: '0 30px 60px -15px rgba(0, 0, 0, 0.9), inset 0 1px 1px rgba(255, 255, 255, 0.15)'
@@ -125,12 +125,12 @@ export default function StarredWallpapersModal({
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header Bar with Dual Navigation Tabs */}
-        <div className="flex items-center justify-between px-4 sm:px-6 py-3.5 border-b border-white/10 flex-shrink-0">
-          <div className="flex items-center gap-2">
+        <div className="flex items-center justify-between px-3.5 sm:px-6 py-3 border-b border-white/10 flex-shrink-0">
+          <div className="flex items-center gap-1.5 sm:gap-2 min-w-0">
             {/* Tab 1: Starred Wallpapers */}
             <button
               onClick={() => setActiveTab('starred')}
-              className={`px-3 py-1.5 rounded-xl text-xs sm:text-sm font-semibold flex items-center gap-1.5 transition-all cursor-pointer ${
+              className={`px-2.5 sm:px-3 py-1.5 rounded-xl text-xs sm:text-sm font-semibold flex items-center gap-1.5 transition-all cursor-pointer flex-shrink-0 ${
                 activeTab === 'starred'
                   ? 'bg-amber-400/20 text-amber-300 border border-amber-400/40 shadow-sm'
                   : 'text-white/60 hover:text-white hover:bg-white/5 border border-transparent'
@@ -148,14 +148,15 @@ export default function StarredWallpapersModal({
             {/* Tab 2: Wallhaven 4K Search */}
             <button
               onClick={() => setActiveTab('search')}
-              className={`px-3 py-1.5 rounded-xl text-xs sm:text-sm font-semibold flex items-center gap-1.5 transition-all cursor-pointer ${
+              className={`px-2.5 sm:px-3 py-1.5 rounded-xl text-xs sm:text-sm font-semibold flex items-center gap-1.5 transition-all cursor-pointer flex-shrink-0 ${
                 activeTab === 'search'
                   ? 'bg-sky-400/20 text-sky-300 border border-sky-400/40 shadow-sm'
                   : 'text-white/60 hover:text-white hover:bg-white/5 border border-transparent'
               }`}
             >
               <Search className="w-3.5 h-3.5" />
-              <span>Search Wallhaven</span>
+              <span className="sm:hidden">Search 4K</span>
+              <span className="hidden sm:inline">Search Wallhaven</span>
               <span className="hidden sm:inline-block text-[9px] uppercase tracking-wider px-1.5 py-0.5 rounded-md bg-sky-500/20 text-sky-300 font-mono">
                 4K Live
               </span>
@@ -165,7 +166,7 @@ export default function StarredWallpapersModal({
           <button
             onClick={onClose}
             title="Close (Esc)"
-            className="p-1.5 rounded-full text-white/40 hover:text-white hover:bg-white/10 transition-colors cursor-pointer"
+            className="p-1.5 rounded-full text-white/40 hover:text-white hover:bg-white/10 transition-colors cursor-pointer flex-shrink-0 ml-2"
           >
             <X className="w-4 h-4 stroke-[2]" />
           </button>
@@ -173,7 +174,7 @@ export default function StarredWallpapersModal({
 
         {/* ================= TAB 1: STARRED WALLPAPERS ================= */}
         {activeTab === 'starred' && (
-          <div className="flex-1 overflow-y-auto p-4 sm:p-5 custom-scrollbar">
+          <div className="flex-1 overflow-y-auto p-3.5 sm:p-5 custom-scrollbar">
             {starredList.length === 0 ? (
               <div className="flex flex-col items-center justify-center py-16 text-center">
                 <div className="w-12 h-12 rounded-2xl bg-amber-400/10 border border-amber-400/20 flex items-center justify-center mb-3">
@@ -194,7 +195,7 @@ export default function StarredWallpapersModal({
                 </button>
               </div>
             ) : (
-              <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5 sm:gap-3">
                 {starredList.map((item) => {
                   const isActive = activeWallpaper?.id === item.id;
 
@@ -251,68 +252,74 @@ export default function StarredWallpapersModal({
 
         {/* ================= TAB 2: SEARCH WALLHAVEN 4K ================= */}
         {activeTab === 'search' && (
-          <div className="flex-1 overflow-y-auto p-4 sm:p-5 custom-scrollbar flex flex-col">
-            {/* Search Input Bar */}
-            <form onSubmit={handleSubmitSearch} className="relative mb-3 flex items-center gap-2">
-              <div className="relative flex-1">
-                <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-white/40" />
-                <input 
-                  type="text"
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  placeholder="Search 4K Wallpapers (e.g. anime, space, cyberpunk, nature)..."
-                  className="w-full pl-10 pr-9 py-2.5 rounded-xl bg-white/[0.06] hover:bg-white/[0.09] focus:bg-white/[0.12] border border-white/15 focus:border-sky-400/60 text-xs sm:text-sm text-white placeholder-white/40 focus:outline-none transition-all shadow-inner"
-                />
-                {searchQuery && (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setSearchQuery('');
-                      setSelectedTag('');
-                    }}
-                    className="absolute right-3 top-1/2 -translate-y-1/2 p-0.5 text-white/40 hover:text-white"
-                  >
-                    <X className="w-3.5 h-3.5" />
-                  </button>
-                )}
-              </div>
+          <div className="flex-1 flex flex-col min-h-0 overflow-hidden">
+            {/* Pinned Search Input & Category Pills Bar (NEVER scrolls away) */}
+            <div className="flex-shrink-0 px-3.5 sm:px-6 pt-3 pb-2.5 border-b border-white/5 bg-black/20">
+              {/* Search Input Bar */}
+              <form onSubmit={handleSubmitSearch} className="relative mb-2 flex items-center gap-2">
+                <div className="relative flex-1 min-w-0">
+                  <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-white/40 pointer-events-none" />
+                  <input 
+                    type="text"
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    placeholder="Search 4K Wallpapers (e.g. nature, space, bikes, cars)..."
+                    className="w-full pl-9 sm:pl-10 pr-8 sm:pr-9 py-2 sm:py-2.5 rounded-xl bg-white/[0.06] hover:bg-white/[0.09] focus:bg-white/[0.12] border border-white/15 focus:border-sky-400/60 text-xs sm:text-sm text-white placeholder-white/40 focus:outline-none transition-all shadow-inner truncate"
+                  />
+                  {searchQuery && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setSearchQuery('');
+                        setSelectedTag('');
+                      }}
+                      className="absolute right-2.5 top-1/2 -translate-y-1/2 p-1 text-white/40 hover:text-white cursor-pointer"
+                    >
+                      <X className="w-3.5 h-3.5" />
+                    </button>
+                  )}
+                </div>
 
-              <button
-                type="submit"
-                disabled={isSearching}
-                className="px-4 py-2.5 rounded-xl bg-sky-500 hover:bg-sky-400 active:scale-95 disabled:opacity-50 text-black font-semibold text-xs sm:text-sm flex items-center gap-1.5 transition-all shadow-md cursor-pointer flex-shrink-0"
+                <button
+                  type="submit"
+                  disabled={isSearching}
+                  className="px-3 sm:px-4 py-2 sm:py-2.5 rounded-xl bg-sky-500 hover:bg-sky-400 active:scale-95 disabled:opacity-50 text-black font-semibold text-xs sm:text-sm flex items-center gap-1.5 transition-all shadow-md cursor-pointer flex-shrink-0"
+                >
+                  {isSearching ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Search className="w-3.5 h-3.5" />}
+                  <span className="hidden xs:inline sm:inline">Search</span>
+                </button>
+              </form>
+
+              {/* Quick Inspiration Category Pills - Clean horizontal scroll with zero cutoffs */}
+              <div 
+                className="flex items-center gap-1.5 overflow-x-auto py-1 no-scrollbar"
+                style={{ scrollbarWidth: 'none', msOverflowStyle: 'none' }}
               >
-                {isSearching ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Search className="w-3.5 h-3.5" />}
-                <span>Search</span>
-              </button>
-            </form>
-
-            {/* Quick Inspiration Category Pills */}
-            <div className="flex items-center gap-1.5 overflow-x-auto pb-3 custom-scrollbar">
-              <span className="text-[10px] uppercase font-mono tracking-wider text-white/40 flex items-center gap-1 mr-1 flex-shrink-0">
-                <Flame className="w-3 h-3 text-amber-400" /> Tags:
-              </span>
-              {POPULAR_TAGS.map((tag) => {
-                const isSelected = selectedTag === tag.label;
-                return (
-                  <button
-                    key={tag.label}
-                    type="button"
-                    onClick={() => handleSelectTag(tag)}
-                    className={`px-2.5 py-1 rounded-lg text-[11px] font-medium whitespace-nowrap transition-all cursor-pointer ${
-                      isSelected
-                        ? 'bg-sky-400/30 text-sky-200 border border-sky-400/50 shadow-sm'
-                        : 'bg-white/[0.05] hover:bg-white/[0.12] text-white/70 hover:text-white border border-white/10'
-                    }`}
-                  >
-                    {tag.label}
-                  </button>
-                );
-              })}
+                <span className="text-[10px] uppercase font-mono tracking-wider text-white/40 flex items-center gap-1 mr-1 flex-shrink-0">
+                  <Flame className="w-3 h-3 text-amber-400" /> Tags:
+                </span>
+                {POPULAR_TAGS.map((tag) => {
+                  const isSelected = selectedTag === tag.label;
+                  return (
+                    <button
+                      key={tag.label}
+                      type="button"
+                      onClick={() => handleSelectTag(tag)}
+                      className={`px-3 py-1.5 rounded-lg text-[11px] sm:text-xs font-medium whitespace-nowrap transition-all cursor-pointer flex-shrink-0 active:scale-95 ${
+                        isSelected
+                          ? 'bg-sky-400/30 text-sky-200 border border-sky-400/50 shadow-sm font-semibold'
+                          : 'bg-white/[0.05] hover:bg-white/[0.12] text-white/70 hover:text-white border border-white/10'
+                      }`}
+                    >
+                      {tag.label}
+                    </button>
+                  );
+                })}
+              </div>
             </div>
 
-            {/* Search Content Results Grid */}
-            <div className="flex-1 mt-1">
+            {/* Scrollable Results Area */}
+            <div className="flex-1 overflow-y-auto p-3.5 sm:p-5 custom-scrollbar">
               {isSearching ? (
                 <div className="flex flex-col items-center justify-center py-16 text-center">
                   <Loader2 className="w-8 h-8 text-sky-400 animate-spin mb-3" />
@@ -326,11 +333,11 @@ export default function StarredWallpapersModal({
                     No wallpapers found
                   </p>
                   <p className="text-xs text-white/40">
-                    Try another search term like "space", "anime", "neon", or tap a tag above.
+                    Try another search term like "nature", "space", "bikes", "cars", or tap a tag above.
                   </p>
                 </div>
               ) : (
-                <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5 sm:gap-3">
                   {searchResults.map((item) => {
                     const isActive = activeWallpaper?.id === item.id;
                     const isStarred = isWallpaperStarred(item.id);
@@ -356,8 +363,8 @@ export default function StarredWallpapersModal({
                         />
 
                         {/* Hover Overlay with Set Wallpaper Action */}
-                        <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-black/30 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-200 flex flex-col justify-end p-2.5">
-                          <span className="text-[11px] font-semibold text-white drop-shadow truncate flex items-center gap-1">
+                        <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-black/30 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-200 flex flex-col justify-end p-2 sm:p-2.5">
+                          <span className="text-[10px] sm:text-[11px] font-semibold text-white drop-shadow truncate flex items-center gap-1">
                             <Sparkles className="w-3 h-3 text-sky-400" />
                             {isActive ? 'Current Wallpaper' : 'Set as Wallpaper'}
                           </span>
@@ -365,8 +372,8 @@ export default function StarredWallpapersModal({
 
                         {/* Active Checkmark Badge */}
                         {isActive && (
-                          <div className="absolute top-2 left-2 px-1.5 py-0.5 rounded-full bg-emerald-500 text-black text-[10px] font-bold flex items-center gap-1 shadow-md">
-                            <Check className="w-3 h-3 stroke-[3]" />
+                          <div className="absolute top-2 left-2 px-1.5 py-0.5 rounded-full bg-emerald-500 text-black text-[9px] sm:text-[10px] font-bold flex items-center gap-1 shadow-md">
+                            <Check className="w-2.5 h-2.5 sm:w-3 sm:h-3 stroke-[3]" />
                             <span>Active</span>
                           </div>
                         )}
@@ -381,7 +388,7 @@ export default function StarredWallpapersModal({
                               : 'bg-black/60 hover:bg-black/80 text-white/70 hover:text-amber-300 opacity-0 group-hover:opacity-100'
                           }`}
                         >
-                          <Star className={`w-3.5 h-3.5 ${isStarred ? 'fill-black' : ''}`} />
+                          <Star className={`w-3 h-3 sm:w-3.5 sm:h-3.5 ${isStarred ? 'fill-black' : ''}`} />
                         </button>
                       </div>
                     );
