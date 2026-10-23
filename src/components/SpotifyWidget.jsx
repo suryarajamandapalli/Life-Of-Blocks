@@ -9,7 +9,7 @@ export default function SpotifyWidget({ isVisible, onClose }) {
 
   return (
     <div
-      className="relative select-none animate-modal-in transition-all duration-300 w-full max-w-[280px] sm:w-[285px] flex-shrink-0"
+      className="relative select-none animate-modal-in transition-all duration-300 w-full max-w-[min(320px,calc(100vw-32px))] sm:w-[290px] flex-shrink-0"
     >
       {/* ========================================================
           ULTRA-MINIMAL SPOTIFY PLAYER FRAME
@@ -17,7 +17,7 @@ export default function SpotifyWidget({ isVisible, onClose }) {
           Pure native Spotify embed with subtle glass border & controls.
           ======================================================== */}
       <div 
-        className="relative group rounded-[16px] overflow-hidden shadow-2xl border border-white/20 backdrop-blur-xl bg-black/60 transition-all duration-300"
+        className="relative group rounded-[18px] sm:rounded-[20px] overflow-hidden shadow-2xl border border-white/20 backdrop-blur-xl bg-black/70 transition-all duration-300"
         style={{
           boxShadow: '0 20px 40px -10px rgba(0, 0, 0, 0.75), 0 8px 16px -4px rgba(0, 0, 0, 0.45)'
         }}

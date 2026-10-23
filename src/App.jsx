@@ -82,18 +82,6 @@ export default function App() {
     }
   });
 
-  const handleTogglePomodoro = () => {
-    setIsPomodoroVisible((prev) => {
-      const next = !prev;
-      try {
-        localStorage.setItem('lob_pomodoro_visible', String(next));
-      } catch (e) {
-        console.warn('Could not save pomodoro visibility:', e);
-      }
-      return next;
-    });
-  };
-
   // Spotify Web Player Widget (toggled with S key or button)
   const [isSpotifyVisible, setIsSpotifyVisible] = useState(() => {
     try {
@@ -103,9 +91,26 @@ export default function App() {
     }
   });
 
+  // Active widget on mobile when both are open ('pomo' | 'spotify')
+  const [mobileActiveWidget, setMobileActiveWidget] = useState('pomo');
+
+  const handleTogglePomodoro = () => {
+    setIsPomodoroVisible((prev) => {
+      const next = !prev;
+      if (next) setMobileActiveWidget('pomo');
+      try {
+        localStorage.setItem('lob_pomodoro_visible', String(next));
+      } catch (e) {
+        console.warn('Could not save pomodoro visibility:', e);
+      }
+      return next;
+    });
+  };
+
   const handleToggleSpotify = () => {
     setIsSpotifyVisible((prev) => {
       const next = !prev;
+      if (next) setMobileActiveWidget('spotify');
       try {
         localStorage.setItem('lob_spotify_visible', String(next));
       } catch (e) {
@@ -479,66 +484,106 @@ export default function App() {
         )}
       </main>
 
-      {/* Floating Widgets Console (Bottom-Left)
-          - Desktop (sm+): Spotify pops up directly ABOVE Pomodoro with the exact same width
-          - Mobile (<sm): Pomodoro and Spotify sit SIDE BY SIDE with smooth horizontal snap scroll */}
-      {(isPomodoroVisible || isSpotifyVisible) && (
-        <div className="fixed bottom-3 sm:bottom-5 left-3 right-3 sm:right-auto sm:left-6 z-40 flex flex-col sm:flex-col-reverse items-start select-none pointer-events-none">
-          {/* Mobile fast switcher pills when both are open */}
-          {isPomodoroVisible && isSpotifyVisible && (
-            <div className="sm:hidden flex items-center gap-1.5 mb-2 px-1 pointer-events-auto">
-              <button
-                type="button"
-                onClick={() => {
-                  const el = document.getElementById('lob-pomo-widget');
-                  el?.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'start' });
-                }}
-                className="px-2.5 py-1 rounded-full text-[11px] font-medium bg-black/60 hover:bg-black/80 text-white/90 border border-white/20 backdrop-blur-md cursor-pointer transition-all active:scale-95 shadow-md flex items-center gap-1.5"
-              >
-                <span>⏱️</span>
-                <span>Focus</span>
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  const el = document.getElementById('lob-spotify-widget');
-                  el?.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'start' });
-                }}
-                className="px-2.5 py-1 rounded-full text-[11px] font-medium bg-black/60 hover:bg-black/80 text-emerald-300 border border-emerald-500/30 backdrop-blur-md cursor-pointer transition-all active:scale-95 shadow-md flex items-center gap-1.5"
-              >
-                <span>🎵</span>
-                <span>Spotify</span>
-              </button>
-            </div>
-          )}
+      {/* ========================================================
+          FLOATING WIDGETS CONSOLE: RESPONSIVE DUAL-DOCK ARCHITECTURE
+          - Desktop (sm+): 
+              * Pomodoro docked at BOTTOM-LEFT (bottom-5 left-6)
+              * Spotify docked at BOTTOM-RIGHT (bottom-5 right-6)
+              * Zero overlap, zero tall stacking, full clear view of center blocks!
+          - Mobile (<sm): 
+              * Centered bottom dock with clean segmented switcher tab when both are open
+              * Zero horizontal cutoff, safe-area inset padding, perfectly responsive
+          ======================================================== */}
 
-          {/* Widgets Container */}
-          <div 
-            className="w-full max-w-[calc(100vw-24px)] sm:max-w-none flex flex-row sm:flex-col-reverse items-end sm:items-start gap-2.5 sm:gap-3 overflow-x-auto sm:overflow-visible pb-1 select-none pointer-events-none snap-x snap-mandatory"
-            style={{ scrollbarWidth: 'none', msOverflowStyle: 'none' }}
-          >
-            {isPomodoroVisible && (
-              <div id="lob-pomo-widget" className="pointer-events-auto flex-shrink-0 snap-start">
-                <PomodoroWidget
-                  isVisible={true}
-                  onClose={handleTogglePomodoro}
-                  onToggleSpotify={handleToggleSpotify}
-                  isSpotifyVisible={isSpotifyVisible}
-                />
+      {/* 1. DESKTOP DOCK (sm: screens and up) */}
+      <div className="hidden sm:block">
+        {/* Desktop Bottom-Left: Pomodoro Timer */}
+        {isPomodoroVisible && (
+          <div className="fixed bottom-5 left-6 z-40 select-none pointer-events-none animate-modal-in">
+            <div className="pointer-events-auto">
+              <PomodoroWidget
+                isVisible={true}
+                onClose={handleTogglePomodoro}
+                onToggleSpotify={handleToggleSpotify}
+                isSpotifyVisible={isSpotifyVisible}
+              />
+            </div>
+          </div>
+        )}
+
+        {/* Desktop Bottom-Right: Spotify Lo-Fi Player */}
+        {isSpotifyVisible && (
+          <div className="fixed bottom-5 right-6 z-40 select-none pointer-events-none animate-modal-in">
+            <div className="pointer-events-auto">
+              <SpotifyWidget
+                isVisible={true}
+                onClose={handleToggleSpotify}
+              />
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* 2. MOBILE DOCK (<sm screens / Phones & APK) */}
+      <div className="sm:hidden">
+        {(isPomodoroVisible || isSpotifyVisible) && (
+          <div className="fixed bottom-3 left-1/2 -translate-x-1/2 z-40 w-full max-w-[min(320px,calc(100vw-24px))] pb-[env(safe-area-inset-bottom,4px)] select-none pointer-events-none flex flex-col items-center">
+            {/* Mobile Tab Switcher when BOTH are open */}
+            {isPomodoroVisible && isSpotifyVisible && (
+              <div className="flex items-center gap-1 mb-2 px-1 pointer-events-auto bg-black/60 backdrop-blur-md p-1 rounded-full border border-white/15 shadow-lg">
+                <button
+                  type="button"
+                  onClick={() => setMobileActiveWidget('pomo')}
+                  className={`px-3 py-1 rounded-full text-[11px] font-semibold transition-all cursor-pointer flex items-center gap-1.5 ${
+                    mobileActiveWidget === 'pomo'
+                      ? 'bg-red-500/90 text-white shadow-md'
+                      : 'text-white/70 hover:text-white'
+                  }`}
+                >
+                  <span>⏱️</span>
+                  <span>Focus</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setMobileActiveWidget('spotify')}
+                  className={`px-3 py-1 rounded-full text-[11px] font-semibold transition-all cursor-pointer flex items-center gap-1.5 ${
+                    mobileActiveWidget === 'spotify'
+                      ? 'bg-[#1DB954]/90 text-white shadow-md'
+                      : 'text-white/70 hover:text-white'
+                  }`}
+                >
+                  <span>🎵</span>
+                  <span>Spotify</span>
+                </button>
               </div>
             )}
 
-            {isSpotifyVisible && (
-              <div id="lob-spotify-widget" className="pointer-events-auto flex-shrink-0 snap-start">
+            {/* Active Mobile Widget */}
+            <div className="w-full pointer-events-auto flex justify-center">
+              {/* Show Pomodoro if only Pomodoro is open, or if both are open and 'pomo' is selected */}
+              {isPomodoroVisible && (!isSpotifyVisible || mobileActiveWidget === 'pomo') && (
+                <PomodoroWidget
+                  isVisible={true}
+                  onClose={handleTogglePomodoro}
+                  onToggleSpotify={() => {
+                    handleToggleSpotify();
+                    setMobileActiveWidget('spotify');
+                  }}
+                  isSpotifyVisible={isSpotifyVisible}
+                />
+              )}
+
+              {/* Show Spotify if only Spotify is open, or if both are open and 'spotify' is selected */}
+              {isSpotifyVisible && (!isPomodoroVisible || mobileActiveWidget === 'spotify') && (
                 <SpotifyWidget
                   isVisible={true}
                   onClose={handleToggleSpotify}
                 />
-              </div>
-            )}
+              )}
+            </div>
           </div>
-        </div>
-      )}
+        )}
+      </div>
 
       {/* App Tray (Toggled with Right Shift) */}
       <AppTray

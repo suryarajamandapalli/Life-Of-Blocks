@@ -1,77 +1,15 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { RotateCcw, Volume2, VolumeX, X, SlidersHorizontal, Check, Plus, Minus } from 'lucide-react';
 import { sound } from '../services/sound';
-
-const STORAGE_KEY = 'lob_retro_pomodoro_state_v2';
+import { 
+  getPomodoroState, 
+  savePomodoroState, 
+  subscribePomodoroStore 
+} from '../services/pomodoroStore';
 
 export default function PomodoroWidget({ isVisible, onClose, onToggleSpotify, isSpotifyVisible }) {
-  // Initialize state lazily from localStorage so page reload NEVER resets to default 25:00
-  const [timerState, setTimerState] = useState(() => {
-    try {
-      const saved = localStorage.getItem(STORAGE_KEY);
-      if (saved) {
-        const parsed = JSON.parse(saved);
-        const focusHours = typeof parsed.focusHours === 'number' ? parsed.focusHours : 0;
-        const focusMinutes = typeof parsed.focusMinutes === 'number' ? parsed.focusMinutes : 25;
-        const breakMinutes = typeof parsed.breakMinutes === 'number' ? parsed.breakMinutes : 5;
-        const mode = parsed.mode === 'break' ? 'break' : 'focus';
-        const sessionCount = typeof parsed.sessionCount === 'number' ? parsed.sessionCount : 1;
-        const isSoundMuted = Boolean(parsed.isSoundMuted);
-
-        const totalFocusSec = (focusHours * 60 + focusMinutes) * 60;
-        const totalBreakSec = breakMinutes * 60;
-        const totalSec = mode === 'focus' ? totalFocusSec : totalBreakSec;
-
-        let isRunning = Boolean(parsed.isRunning);
-        let targetEndTime = parsed.targetEndTime || null;
-        let remaining = typeof parsed.remaining === 'number' ? parsed.remaining : totalSec;
-
-        // If it was running when refreshed, calculate exact real-time remaining
-        if (isRunning && targetEndTime) {
-          const now = Date.now();
-          const left = Math.round((targetEndTime - now) / 1000);
-          if (left > 0) {
-            remaining = left;
-            isRunning = true;
-          } else {
-            // Completed while offline / closed
-            remaining = 0;
-            isRunning = false;
-            targetEndTime = null;
-          }
-        } else {
-          isRunning = false;
-          targetEndTime = null;
-        }
-
-        return {
-          mode,
-          sessionCount,
-          focusHours,
-          focusMinutes,
-          breakMinutes,
-          remaining,
-          isRunning,
-          targetEndTime,
-          isSoundMuted
-        };
-      }
-    } catch (e) {
-      console.warn('Could not restore retro pomodoro state:', e);
-    }
-
-    return {
-      mode: 'focus',
-      sessionCount: 1,
-      focusHours: 0,
-      focusMinutes: 25,
-      breakMinutes: 5,
-      remaining: 25 * 60,
-      isRunning: false,
-      targetEndTime: null,
-      isSoundMuted: false
-    };
-  });
+  // Initialize state from pomodoroStore (local + cloud synced)
+  const [timerState, setTimerState] = useState(() => getPomodoroState());
 
   const {
     mode,
@@ -84,6 +22,15 @@ export default function PomodoroWidget({ isVisible, onClose, onToggleSpotify, is
     targetEndTime,
     isSoundMuted
   } = timerState;
+
+  // Subscribe to multi-device real-time sync
+  useEffect(() => {
+    const handleSync = (newState) => {
+      setTimerState(newState);
+    };
+    const unsub = subscribePomodoroStore(handleSync);
+    return () => unsub();
+  }, []);
 
   // Toggle duration editing mode inside the LCD screen
   const [isEditingDurations, setIsEditingDurations] = useState(false);
@@ -102,15 +49,6 @@ export default function PomodoroWidget({ isVisible, onClose, onToggleSpotify, is
     }
   }, [isEditingDurations, focusHours, focusMinutes, breakMinutes]);
 
-  // Save state immediately on any change to localStorage
-  useEffect(() => {
-    try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(timerState));
-    } catch (e) {
-      console.warn('Could not save retro pomodoro state:', e);
-    }
-  }, [timerState]);
-
   // Wall-clock synced interval countdown (resilient to tab throttling and system sleeps)
   useEffect(() => {
     let interval = null;
@@ -127,9 +65,10 @@ export default function PomodoroWidget({ isVisible, onClose, onToggleSpotify, is
             }
 
             // Mode switch upon completion
+            let nextState;
             if (prev.mode === 'focus') {
               const nextSec = prev.breakMinutes * 60;
-              return {
+              nextState = {
                 ...prev,
                 mode: 'break',
                 remaining: nextSec,
@@ -138,7 +77,7 @@ export default function PomodoroWidget({ isVisible, onClose, onToggleSpotify, is
               };
             } else {
               const nextSec = (prev.focusHours * 60 + prev.focusMinutes) * 60;
-              return {
+              nextState = {
                 ...prev,
                 mode: 'focus',
                 sessionCount: prev.sessionCount + 1,
@@ -147,6 +86,8 @@ export default function PomodoroWidget({ isVisible, onClose, onToggleSpotify, is
                 targetEndTime: null
               };
             }
+            savePomodoroState(nextState);
+            return nextState;
           }
 
           return {
@@ -169,24 +110,28 @@ export default function PomodoroWidget({ isVisible, onClose, onToggleSpotify, is
     if (isRunning) {
       // Pause: capture current remaining and clear targetEndTime
       const currentDiff = targetEndTime ? Math.max(0, Math.round((targetEndTime - Date.now()) / 1000)) : remaining;
-      setTimerState((prev) => ({
-        ...prev,
+      const updated = {
+        ...timerState,
         isRunning: false,
         remaining: currentDiff,
         targetEndTime: null
-      }));
+      };
+      setTimerState(updated);
+      savePomodoroState(updated);
     } else {
       // Start: set targetEndTime from remaining
       const totalSec = mode === 'focus' ? (focusHours * 60 + focusMinutes) * 60 : breakMinutes * 60;
       const durationToRun = remaining > 0 ? remaining : totalSec;
       const target = Date.now() + durationToRun * 1000;
 
-      setTimerState((prev) => ({
-        ...prev,
+      const updated = {
+        ...timerState,
         isRunning: true,
         remaining: durationToRun,
         targetEndTime: target
-      }));
+      };
+      setTimerState(updated);
+      savePomodoroState(updated);
     }
   };
 
@@ -194,12 +139,14 @@ export default function PomodoroWidget({ isVisible, onClose, onToggleSpotify, is
   const handleReset = () => {
     if (!isSoundMuted) sound.playTick();
     const totalSec = mode === 'focus' ? (focusHours * 60 + focusMinutes) * 60 : breakMinutes * 60;
-    setTimerState((prev) => ({
-      ...prev,
+    const updated = {
+      ...timerState,
       isRunning: false,
       remaining: totalSec,
       targetEndTime: null
-    }));
+    };
+    setTimerState(updated);
+    savePomodoroState(updated);
   };
 
   // Toggle between Focus and Break modes
@@ -208,13 +155,15 @@ export default function PomodoroWidget({ isVisible, onClose, onToggleSpotify, is
     const nextMode = mode === 'focus' ? 'break' : 'focus';
     const totalSec = nextMode === 'focus' ? (focusHours * 60 + focusMinutes) * 60 : breakMinutes * 60;
 
-    setTimerState((prev) => ({
-      ...prev,
+    const updated = {
+      ...timerState,
       mode: nextMode,
       isRunning: false,
       remaining: totalSec,
       targetEndTime: null
-    }));
+    };
+    setTimerState(updated);
+    savePomodoroState(updated);
   };
 
   // Apply custom duration settings
@@ -229,22 +178,27 @@ export default function PomodoroWidget({ isVisible, onClose, onToggleSpotify, is
     const totalFocusSec = (sanitizedH * 60 + sanitizedM) * 60;
     const totalBreakSec = sanitizedBreak * 60;
 
-    setTimerState((prev) => {
-      // If timer is not running, update remaining immediately
-      const newRemaining = !prev.isRunning
-        ? (prev.mode === 'focus' ? totalFocusSec : totalBreakSec)
-        : prev.remaining;
+    const newRemaining = !isRunning
+      ? (mode === 'focus' ? totalFocusSec : totalBreakSec)
+      : remaining;
 
-      return {
-        ...prev,
-        focusHours: sanitizedH,
-        focusMinutes: sanitizedM,
-        breakMinutes: sanitizedBreak,
-        remaining: newRemaining
-      };
-    });
+    const updated = {
+      ...timerState,
+      focusHours: sanitizedH,
+      focusMinutes: sanitizedM,
+      breakMinutes: sanitizedBreak,
+      remaining: newRemaining
+    };
 
+    setTimerState(updated);
+    savePomodoroState(updated);
     setIsEditingDurations(false);
+  };
+
+  const handleToggleMute = () => {
+    const updated = { ...timerState, isSoundMuted: !isSoundMuted };
+    setTimerState(updated);
+    savePomodoroState(updated);
   };
 
   // Quick preset helper
@@ -268,14 +222,14 @@ export default function PomodoroWidget({ isVisible, onClose, onToggleSpotify, is
 
   return (
     <div
-      className="relative select-none animate-modal-in transition-all duration-300 w-full max-w-[280px] sm:w-[285px] flex-shrink-0"
+      className="relative select-none animate-modal-in transition-all duration-300 w-full max-w-[min(320px,calc(100vw-32px))] sm:w-[285px] flex-shrink-0"
       style={{ perspective: '1000px' }}
     >
       {/* ========================================================
           RETRO GAMEBOY / BRAUN PHYSICAL ELECTRONIC DEVICE CHASSIS
           ======================================================== */}
       <div 
-        className="relative w-full rounded-[28px] p-3.5 sm:p-4 select-none"
+        className="relative w-full rounded-[24px] sm:rounded-[28px] p-3 sm:p-4 select-none"
         style={{
           background: 'linear-gradient(180deg, #c7cbd1 0%, #b5b9c0 50%, #a2a6ad 100%)',
           boxShadow: `
@@ -300,7 +254,7 @@ export default function PomodoroWidget({ isVisible, onClose, onToggleSpotify, is
             THICK DARK SCREEN BEZEL & SAGE GREEN LCD DISPLAY
             ======================================================== */}
         <div 
-          className="rounded-[20px] p-2 mb-3"
+          className="rounded-[18px] sm:rounded-[20px] p-1.5 sm:p-2 mb-2 sm:mb-2.5"
           style={{
             background: '#202226',
             boxShadow: 'inset 0 2px 4px rgba(0,0,0,0.6), 0 1px 0 rgba(255,255,255,0.4)'
@@ -308,7 +262,7 @@ export default function PomodoroWidget({ isVisible, onClose, onToggleSpotify, is
         >
           {/* Sage Greenish LCD Screen */}
           <div 
-            className="w-full rounded-[14px] px-3 pt-2.5 pb-2.5 flex flex-col items-center justify-between relative overflow-hidden min-h-[142px]"
+            className="w-full rounded-[14px] px-2.5 sm:px-3 pt-2 pb-2 flex flex-col items-center justify-between relative overflow-hidden min-h-[128px] sm:min-h-[142px]"
             style={{
               background: '#98ad86',
               backgroundImage: 'linear-gradient(rgba(0, 0, 0, 0.035) 50%, transparent 50%)',
@@ -544,11 +498,11 @@ export default function PomodoroWidget({ isVisible, onClose, onToggleSpotify, is
         {/* ========================================================
             PHYSICAL MECHANICAL PUSH BUTTONS (START & RESET)
             ======================================================== */}
-        <div className="grid grid-cols-2 gap-2.5 mb-3">
+        <div className="grid grid-cols-2 gap-2 sm:gap-2.5 mb-2 sm:mb-2.5">
           {/* Left Button: Red START / PAUSE Button */}
           <button
             onClick={toggleRun}
-            className="group relative h-[52px] rounded-xl p-2.5 flex flex-col justify-between transition-all duration-100 cursor-pointer text-left active:translate-y-[2px]"
+            className="group relative h-[46px] sm:h-[50px] rounded-xl p-2 sm:p-2.5 flex flex-col justify-between transition-all duration-100 cursor-pointer text-left active:translate-y-[2px]"
             style={{
               background: 'linear-gradient(180deg, #d32824 0%, #b51c19 100%)',
               border: '1px solid #e64c48',
@@ -581,7 +535,7 @@ export default function PomodoroWidget({ isVisible, onClose, onToggleSpotify, is
           {/* Right Button: Charcoal RESET Button */}
           <button
             onClick={handleReset}
-            className="group relative h-[52px] rounded-xl p-2.5 flex flex-col justify-between transition-all duration-100 cursor-pointer text-left active:translate-y-[2px]"
+            className="group relative h-[46px] sm:h-[50px] rounded-xl p-2 sm:p-2.5 flex flex-col justify-between transition-all duration-100 cursor-pointer text-left active:translate-y-[2px]"
             style={{
               background: 'linear-gradient(180deg, #3f4249 0%, #2e3036 100%)',
               border: '1px solid #545862',
@@ -606,7 +560,7 @@ export default function PomodoroWidget({ isVisible, onClose, onToggleSpotify, is
         <div className="flex items-center gap-2 pt-0.5 px-0.5">
           {/* Sound Toggle Button */}
           <button
-            onClick={() => setTimerState(prev => ({ ...prev, isSoundMuted: !prev.isSoundMuted }))}
+            onClick={handleToggleMute}
             title={isSoundMuted ? 'Unmute Sound' : 'Mute Sound'}
             className="w-7 h-7 rounded-lg bg-[#27292e] hover:bg-[#32353c] border border-black/20 text-white/75 hover:text-white flex items-center justify-center cursor-pointer transition-colors shadow-inner flex-shrink-0"
           >
