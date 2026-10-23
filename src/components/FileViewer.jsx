@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import { getFileObjectUrl, getFileContent } from '../services/storage';
 import * as XLSX from 'xlsx';
 import { 
@@ -302,19 +303,26 @@ export default function FileViewer({ file, allFiles = [], onClose, onDownload, o
   useEffect(() => {
     const handleKeyDown = (e) => {
       if (e.key === 'Escape') {
+        e.preventDefault();
+        e.stopPropagation();
+        e.stopImmediatePropagation();
         onClose();
-      } else if (e.key === 'ArrowLeft' && hasPrev) {
+        return;
+      }
+      if (e.key === 'ArrowLeft' && hasPrev) {
+        e.preventDefault();
         onSelectFile?.(allFiles[currentIndex - 1]);
       } else if (e.key === 'ArrowRight' && hasNext) {
+        e.preventDefault();
         onSelectFile?.(allFiles[currentIndex + 1]);
       }
     };
-    window.addEventListener('keydown', handleKeyDown);
+    window.addEventListener('keydown', handleKeyDown, { capture: true });
     const prevOverflow = document.body.style.overflow;
     document.body.style.overflow = 'hidden';
 
     return () => {
-      window.removeEventListener('keydown', handleKeyDown);
+      window.removeEventListener('keydown', handleKeyDown, { capture: true });
       document.body.style.overflow = prevOverflow;
     };
   }, [onClose, currentIndex, hasPrev, hasNext, allFiles, onSelectFile]);
@@ -372,36 +380,36 @@ export default function FileViewer({ file, allFiles = [], onClose, onDownload, o
 
   if (!file) return null;
 
-  return (
+  const modalContent = (
     <div 
-      className="fixed inset-0 z-[9999] flex flex-col bg-black/92 backdrop-blur-2xl select-none animate-modal-in"
+      className="file-viewer-active fixed inset-0 z-[99999] flex flex-col bg-black/95 backdrop-blur-3xl select-none animate-modal-in"
       onClick={onClose}
     >
-      {/* Discrete Floating Top Header Bar */}
+      {/* Discrete Floating Top Header Bar — Guaranteed above all controls */}
       <div 
-        className="flex items-center justify-between px-5 py-4 z-20 flex-shrink-0"
+        className="flex items-center justify-between px-4 sm:px-6 py-3 sm:py-4 z-20 flex-shrink-0 border-b border-white/10 bg-black/40 backdrop-blur-xl"
         onClick={(e) => e.stopPropagation()}
       >
-        <span className="text-sm font-medium text-white/80 truncate max-w-sm sm:max-w-md drop-shadow-md">
+        <span className="text-sm font-medium text-white/90 truncate max-w-[180px] sm:max-w-md drop-shadow-md">
           {file.name}
         </span>
 
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2.5">
           <button
             onClick={() => onDownload(file)}
             title="Download file"
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-white/10 hover:bg-white/20 text-xs font-medium text-white backdrop-blur-md transition-all cursor-pointer"
+            className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-full bg-white/15 hover:bg-white/25 active:scale-95 text-xs font-semibold text-white border border-white/20 backdrop-blur-md transition-all cursor-pointer shadow-md"
           >
             <Download className="w-3.5 h-3.5" />
-            <span className="hidden sm:inline">Download</span>
+            <span>Download</span>
           </button>
 
           <button
             onClick={onClose}
             title="Close (Esc)"
-            className="p-1.5 rounded-full bg-white/10 hover:bg-white/20 text-white/70 hover:text-white backdrop-blur-md transition-all cursor-pointer"
+            className="p-1.5 rounded-full bg-white/15 hover:bg-white/25 active:scale-95 text-white/80 hover:text-white border border-white/20 backdrop-blur-md transition-all cursor-pointer shadow-md"
           >
-            <X className="w-4 h-4 stroke-[2]" />
+            <X className="w-4 h-4 stroke-[2.2]" />
           </button>
         </div>
       </div>
@@ -475,4 +483,6 @@ export default function FileViewer({ file, allFiles = [], onClose, onDownload, o
       </div>
     </div>
   );
+
+  return typeof document !== 'undefined' ? createPortal(modalContent, document.body) : modalContent;
 }

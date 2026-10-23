@@ -649,42 +649,85 @@ export async function uploadFile(blockId, file, onProgress) {
   return fallbackMeta;
 }
 
+function dataURLtoBlob(dataurl) {
+  try {
+    const parts = dataurl.split(',');
+    const mimeMatch = parts[0].match(/:(.*?);/);
+    const mime = mimeMatch ? mimeMatch[1] : 'application/octet-stream';
+    const bstr = atob(parts[1]);
+    let n = bstr.length;
+    const u8arr = new Uint8Array(n);
+    while (n--) {
+      u8arr[n] = bstr.charCodeAt(n);
+    }
+    return new Blob([u8arr], { type: mime });
+  } catch (e) {
+    console.warn('Failed to convert dataURL to blob:', e);
+    return null;
+  }
+}
+
+function triggerBlobDownload(blob, filename) {
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = filename || 'download';
+  link.style.display = 'none';
+  document.body.appendChild(link);
+  link.click();
+  setTimeout(() => {
+    try {
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+    } catch {}
+  }, 10000);
+}
+
 export async function downloadFile(file) {
   try {
+    const filename = file.name || 'download';
+
+    // 1. Try IndexedDB cached blob first
+    const targetId = file.id || file.fileId;
+    const cachedBlob = await getFileBlob(targetId).catch(() => null);
+    if (cachedBlob) {
+      triggerBlobDownload(cachedBlob, filename);
+      return;
+    }
+
+    // 2. Data URL: convert to Blob and download reliably
+    if (file.downloadURL && file.downloadURL.startsWith('data:')) {
+      const blob = dataURLtoBlob(file.downloadURL);
+      if (blob) {
+        triggerBlobDownload(blob, filename);
+        return;
+      }
+    }
+
+    // 3. HTTP / Cloud URL: fetch as blob for seamless download
     if (file.downloadURL && file.downloadURL.startsWith('http')) {
+      try {
+        const res = await fetch(file.downloadURL);
+        if (res.ok) {
+          const blob = await res.blob();
+          triggerBlobDownload(blob, filename);
+          return;
+        }
+      } catch (fetchErr) {
+        console.warn('Direct fetch failed, falling back to direct anchor download:', fetchErr);
+      }
+
+      // Anchor fallback for cross-origin URLs
       const link = document.createElement('a');
       link.href = file.downloadURL;
-      link.download = file.name || 'download';
+      link.download = filename;
       link.target = '_blank';
       link.rel = 'noopener noreferrer';
       document.body.appendChild(link);
       link.click();
-      document.body.removeChild(link);
-      return;
-    }
-
-    if (file.downloadURL && file.downloadURL.startsWith('data:')) {
-      const link = document.createElement('a');
-      link.href = file.downloadURL;
-      link.download = file.name || 'download';
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-      return;
-    }
-
-    // Try IndexedDB blob
-    const targetId = file.id || file.fileId;
-    const blob = await getFileBlob(targetId);
-    if (blob) {
-      const url = URL.createObjectURL(blob);
-      const link = document.createElement('a');
-      link.href = url;
-      link.download = file.name || 'download';
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-      setTimeout(() => URL.revokeObjectURL(url), 2000);
+      setTimeout(() => {
+        try { document.body.removeChild(link); } catch {}
+      }, 2000);
       return;
     }
 

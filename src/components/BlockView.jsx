@@ -4,7 +4,8 @@ import {
   ChevronRight, 
   Pencil, 
   Check, 
-  X
+  X,
+  Files as FilesIcon
 } from 'lucide-react';
 import TodoItem from './TodoItem';
 import FileTile from './FileTile';
@@ -456,17 +457,6 @@ export default function BlockView({
 
         {/* TASKS */}
         <div className="mb-10">
-          <div 
-            className={`text-xs font-semibold tracking-wider uppercase mb-3 ${
-              isLight ? 'text-zinc-800' : 'text-white/60'
-            }`}
-            style={{
-              textShadow: isLight ? '0 1px 2px rgba(255, 255, 255, 0.85)' : '0 1px 4px rgba(0, 0, 0, 0.85)'
-            }}
-          >
-            Tasks
-          </div>
-
           {loadingTodos && (
             <p className={`text-xs tracking-wider py-2 ${isLight ? 'text-zinc-500' : 'text-white/40'}`}>Loading...</p>
           )}
@@ -582,14 +572,18 @@ export default function BlockView({
         {/* FILES */}
         <div>
           <div 
-            className={`text-xs font-semibold tracking-wider uppercase mb-3 ${
+            className={`inline-flex items-center gap-1.5 mb-3 ${
               isLight ? 'text-zinc-800' : 'text-white/60'
             }`}
             style={{
-              textShadow: isLight ? '0 1px 2px rgba(255, 255, 255, 0.85)' : '0 1px 4px rgba(0, 0, 0, 0.85)'
+              filter: isLight 
+                ? 'drop-shadow(0 1px 2px rgba(255, 255, 255, 0.85))' 
+                : 'drop-shadow(0 1px 4px rgba(0, 0, 0, 0.85))'
             }}
+            title="Files"
+            aria-label="Files"
           >
-            Files
+            <FilesIcon className="w-4 h-4 stroke-[2]" />
           </div>
 
           {loadingFiles && (

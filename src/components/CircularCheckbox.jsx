@@ -24,7 +24,7 @@ export default function CircularCheckbox({ checked, onChange, disabled, isLightM
           ? (isLightMode ? '1.8px solid #059669' : '1.8px solid #34d399')
           : (isLightMode ? '1.5px solid rgba(17, 17, 17, 0.65)' : '1.5px solid rgba(255, 255, 255, 0.75)'),
         boxShadow: checked
-          ? (isLightMode ? '0 0 6px rgba(5, 150, 105, 0.35)' : '0 0 10px rgba(52, 211, 153, 0.5)')
+          ? 'none'
           : (isLightMode ? '0 1px 2px rgba(255,255,255,0.4)' : '0 1px 4px rgba(0,0,0,0.5)'),
         backdropFilter: 'blur(4px)',
         WebkitBackdropFilter: 'blur(4px)',

@@ -291,6 +291,10 @@ export default function App() {
       }
 
       if (e.key === 'Escape') {
+        // If file viewer or preview modal is open, let it handle Escape (do not navigate back to Home)
+        if (typeof document !== 'undefined' && document.querySelector('.file-viewer-active')) {
+          return;
+        }
         if (isGalleryOpen) {
           setIsGalleryOpen(false);
           return;
