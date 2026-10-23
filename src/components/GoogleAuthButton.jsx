@@ -1,6 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { LogOut, Loader2, Mail, Lock, X, Sparkles, Check, AlertCircle, Copy, Smartphone, Monitor } from 'lucide-react';
-import { Capacitor } from '@capacitor/core';
+import { LogOut, Loader2, Mail, Lock, X, Sparkles, Check, AlertCircle } from 'lucide-react';
 import { 
   subscribeAuth, 
   signInWithGoogle, 
@@ -16,7 +15,6 @@ export default function GoogleAuthButton() {
   const [isSigningIn, setIsSigningIn] = useState(false);
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [isModalOpen, setIsModalOpen] = useState(false);
-  const [copiedUid, setCopiedUid] = useState(false);
   const [sync, setSync] = useState(getSyncStatus());
 
   // Email/Password form state
@@ -75,14 +73,6 @@ export default function GoogleAuthButton() {
     }
   };
 
-  const handleCopyUid = () => {
-    if (user?.uid) {
-      navigator.clipboard.writeText(user.uid);
-      setCopiedUid(true);
-      setTimeout(() => setCopiedUid(false), 2000);
-    }
-  };
-
   const handleEmailAuth = async (e) => {
     e.preventDefault();
     if (!email || !password) return;
@@ -121,15 +111,13 @@ export default function GoogleAuthButton() {
     );
   }
 
-  // User is LOGGED IN -> Minimal Avatar + Verified Profile Menu
+  // User is LOGGED IN -> Minimal Avatar with green sync circle + sleek popover
   if (user) {
-    const isNative = Capacitor.isNativePlatform();
-
     return (
       <div className="relative" ref={menuRef}>
         <button
           onClick={() => setIsMenuOpen(prev => !prev)}
-          title={`${user.displayName || user.email} (Click for Account & Sync Details)`}
+          title={`${user.displayName || user.email} (Account)`}
           aria-label="Account"
           className="relative w-8 h-8 sm:w-9 sm:h-9 rounded-full overflow-hidden border-2 border-emerald-400/80 hover:border-emerald-300 shadow-md cursor-pointer transition-all active:scale-95 flex items-center justify-center bg-black/40 backdrop-blur-md"
         >
@@ -150,14 +138,14 @@ export default function GoogleAuthButton() {
         {/* Minimalist Liquid Glass Account Popover */}
         {isMenuOpen && (
           <div 
-            className="absolute right-0 mt-2.5 w-72 rounded-2xl border border-white/15 p-3.5 shadow-2xl backdrop-blur-2xl z-50 animate-modal-in select-none"
+            className="absolute right-0 mt-2.5 w-64 sm:w-72 rounded-2xl border border-white/15 p-3 sm:p-3.5 shadow-2xl backdrop-blur-2xl z-50 animate-modal-in select-none"
             style={{
               background: 'linear-gradient(135deg, rgba(20, 24, 32, 0.96) 0%, rgba(10, 12, 16, 0.98) 100%)',
               boxShadow: '0 20px 40px -10px rgba(0,0,0,0.85), inset 0 1px 1px rgba(255,255,255,0.15)'
             }}
           >
             {/* User Profile Header */}
-            <div className="flex items-center justify-between gap-2.5 pb-3 border-b border-white/10">
+            <div className="flex items-center justify-between gap-2.5">
               <div className="flex items-center gap-2.5 min-w-0 flex-1">
                 <div className="relative flex-shrink-0">
                   {user.photoURL ? (
@@ -194,43 +182,6 @@ export default function GoogleAuthButton() {
               >
                 <LogOut className="w-4 h-4" />
               </button>
-            </div>
-
-            {/* Auth UID & Backend Consistency Proof */}
-            <div className="mt-3 pt-1 space-y-2 text-[11px]">
-              <div className="flex items-center justify-between text-white/60">
-                <span className="font-mono text-[10px] uppercase tracking-wider">Firebase Auth UID</span>
-                <button
-                  onClick={handleCopyUid}
-                  className="flex items-center gap-1 text-[10px] text-emerald-400 hover:text-emerald-300 cursor-pointer active:scale-95"
-                >
-                  {copiedUid ? <Check className="w-3 h-3" /> : <Copy className="w-3 h-3" />}
-                  {copiedUid ? 'Copied' : 'Copy UID'}
-                </button>
-              </div>
-
-              <div className="p-2 rounded-lg bg-black/50 border border-white/10 font-mono text-[10px] text-white/80 break-all select-all">
-                {user.uid}
-              </div>
-
-              {/* Platform Info */}
-              <div className="flex items-center justify-between pt-1 text-[11px] text-white/50">
-                <span className="flex items-center gap-1">
-                  {isNative ? <Smartphone className="w-3 h-3 text-sky-400" /> : <Monitor className="w-3 h-3 text-sky-400" />}
-                  Platform
-                </span>
-                <span className="text-white/80 font-medium">
-                  {isNative ? 'Android APK' : (window.innerWidth < 640 ? 'Mobile Web' : 'Desktop Web')}
-                </span>
-              </div>
-
-              {/* Database Target */}
-              <div className="flex items-center justify-between text-[11px] text-white/50">
-                <span>Database Source</span>
-                <span className="text-emerald-400 font-medium">
-                  Firebase RTDB
-                </span>
-              </div>
             </div>
           </div>
         )}

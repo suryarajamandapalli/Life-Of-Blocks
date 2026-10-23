@@ -128,18 +128,9 @@ export default function WallpaperControls({
         disabled={isRefreshing}
         title={locked ? "Wallpaper is Locked (Tap/Hold to unlock)" : "Shuffle Wallpaper (Hold for options)"}
         aria-label="Wallpaper controls"
-        className={`relative w-8 h-8 sm:w-9 sm:h-9 rounded-full bg-black/40 hover:bg-black/65 border backdrop-blur-md transition-all duration-200 flex items-center justify-center cursor-pointer shadow-lg active:scale-95 ${
-          locked 
-            ? 'border-emerald-400/50 text-emerald-300 shadow-[0_0_10px_rgba(52,211,153,0.3)]' 
-            : 'border-white/10 hover:border-white/30 text-white/60 hover:text-white'
-        }`}
+        className="relative w-8 h-8 sm:w-9 sm:h-9 rounded-full bg-black/40 hover:bg-black/65 border border-white/10 hover:border-white/30 text-white/70 hover:text-white backdrop-blur-md transition-all duration-200 flex items-center justify-center cursor-pointer shadow-lg active:scale-95"
       >
         <RotateCw className={`w-3.5 h-3.5 ${isRefreshing ? 'animate-spin text-white' : ''}`} />
-
-        {/* Subtle lock dot on top corner if locked */}
-        {locked && (
-          <span className="absolute -top-0.5 -right-0.5 w-2 h-2 rounded-full bg-emerald-400 shadow-[0_0_6px_#34d399]" />
-        )}
       </button>
 
       {/* Floating Options Dropdown (Revealed on Hover or Long-Press) */}

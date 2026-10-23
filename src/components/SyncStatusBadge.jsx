@@ -34,8 +34,9 @@ export default function SyncStatusBadge() {
     setTimeout(() => setCopied(false), 2000);
   };
 
-  // Only render if user is logged in
-  if (!user) return null;
+  // Only render if user is logged in AND there is an error or permission issue that needs attention
+  // Normal synced state is indicated by the green circle around account profile picture
+  if (!user || sync.status === 'synced' || sync.status === 'syncing') return null;
 
   return (
     <>
@@ -47,31 +48,13 @@ export default function SyncStatusBadge() {
         }}
         title={sync.message || `Sync Status: ${sync.status}`}
         className={`h-7 sm:h-8 px-2 sm:px-2.5 rounded-full backdrop-blur-md border flex items-center gap-1.5 transition-all select-none cursor-pointer active:scale-95 ${
-          sync.status === 'synced'
-            ? 'bg-black/35 hover:bg-black/50 border-emerald-500/30 text-emerald-300'
-            : sync.status === 'syncing'
-            ? 'bg-black/35 border-sky-500/30 text-sky-300'
-            : sync.status === 'permission_denied'
+          sync.status === 'permission_denied'
             ? 'bg-amber-950/40 hover:bg-amber-950/60 border-amber-500/50 text-amber-300 animate-pulse'
             : sync.status === 'offline'
             ? 'bg-black/35 border-zinc-500/30 text-zinc-400'
             : 'bg-rose-950/40 border-rose-500/40 text-rose-300'
         }`}
       >
-        {sync.status === 'synced' && (
-          <>
-            <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 shadow-[0_0_6px_#34d399]" />
-            <span className="text-[10px] sm:text-[11px] font-medium tracking-wide">Synced</span>
-          </>
-        )}
-
-        {sync.status === 'syncing' && (
-          <>
-            <RefreshCw className="w-2.5 h-2.5 sm:w-3 sm:h-3 animate-spin text-sky-400" />
-            <span className="text-[10px] sm:text-[11px] font-medium tracking-wide">Syncing...</span>
-          </>
-        )}
-
         {sync.status === 'permission_denied' && (
           <>
             <AlertTriangle className="w-2.5 h-2.5 sm:w-3 sm:h-3 text-amber-400" />
