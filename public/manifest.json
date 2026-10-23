@@ -1,0 +1,28 @@
+{
+  "name": "LIFE OF BLOCKS",
+  "short_name": "LifeOfBlocks",
+  "description": "Keep every little thing in its own place. A minimal spatial productivity workspace.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#050608",
+  "theme_color": "#050608",
+  "icons": [
+    {
+      "src": "/favicon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/apple-touch-icon.png",
+      "sizes": "180x180",
+      "type": "image/png"
+    },
+    {
+      "src": "/logo512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}
