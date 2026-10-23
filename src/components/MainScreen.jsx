@@ -1,5 +1,5 @@
 import React, { useRef } from 'react';
-import { Plus, Trash2, Box } from 'lucide-react';
+import { Trash2, Box } from 'lucide-react';
 import { useAdaptiveContrast } from '../hooks/useAdaptiveContrast';
 
 export default function MainScreen({
@@ -23,7 +23,7 @@ export default function MainScreen({
       ref={containerRef}
       className="w-full max-w-[760px] mx-auto px-4 sm:px-6 min-h-[85vh] flex flex-col items-center justify-center animate-page-in select-none transition-colors duration-300"
     >
-      {/* Title */}
+      {/* Title with simple inline '+' trigger */}
       <h1 
         className={`text-2xl sm:text-3xl md:text-4xl font-bold tracking-[0.18em] text-center transition-colors duration-300 ${
           isLight
@@ -31,12 +31,21 @@ export default function MainScreen({
             : 'text-white drop-shadow-[0_2px_14px_rgba(0,0,0,0.85)]'
         }`}
       >
-        LIFE OF BLOCKS
+        <span>LIFE OF BLOCKS</span>{' '}
+        <button
+          type="button"
+          onClick={onOpenCreateModal}
+          title="Create Block (+ or N)"
+          aria-label="Create Block"
+          className="cursor-pointer hover:opacity-70 hover:scale-110 active:scale-90 transition-all inline-block select-none font-bold px-1.5 py-0.5 -mx-1"
+        >
+          +
+        </button>
       </h1>
 
       {/* When blocks exist: display the user's blocks */}
       {!loading && rootBlocks.length > 0 && (
-        <div className="w-full grid grid-cols-1 sm:grid-cols-2 gap-3.5 sm:gap-4 my-10 sm:my-14">
+        <div className="w-full grid grid-cols-1 sm:grid-cols-2 gap-3.5 sm:gap-4 mt-8 sm:mt-12 mb-6 sm:mb-8">
           {rootBlocks.map((block) => {
             const blockTodos = todos.filter(t => t.blockId === block.id);
             const total = blockTodos.length;
@@ -142,21 +151,6 @@ export default function MainScreen({
           })}
         </div>
       )}
-
-      {/* Single + Button */}
-      <div className={`${rootBlocks.length > 0 ? 'mt-2 mb-8' : 'mt-14 sm:mt-20'}`}>
-        <button
-          onClick={onOpenCreateModal}
-          title="Create Block (+)"
-          className={`w-14 h-14 sm:w-16 sm:h-16 rounded-full flex items-center justify-center hover:scale-105 active:scale-95 transition-all duration-200 shadow-2xl cursor-pointer group ${
-            isLight
-              ? 'bg-white/70 hover:bg-white/90 border border-black/15 text-zinc-900 hover:border-black/30'
-              : 'smoked-tile text-white/85 hover:text-white hover:border-white/30'
-          }`}
-        >
-          <Plus className="w-6 h-6 sm:w-7 sm:h-7 stroke-[2.2] group-hover:rotate-90 transition-transform duration-200" />
-        </button>
-      </div>
     </div>
   );
 }

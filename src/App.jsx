@@ -344,7 +344,7 @@ export default function App() {
         return;
       }
 
-      if (e.code === 'KeyN' && !currentBlockId) {
+      if ((e.code === 'KeyN' || e.key === '+' || e.key === '=') && !currentBlockId) {
         e.preventDefault();
         if (isRightShiftDownRef.current) didComboRef.current = true;
         setIsCreateModalOpen(true);
