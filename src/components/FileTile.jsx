@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { getFileObjectUrl, getFileContent } from '../services/storage';
+import { getPdfThumbnail } from '../services/pdfThumbnail';
 import { 
   Play, 
   Music, 
@@ -21,6 +22,7 @@ export default function FileTile({
 }) {
   const [thumbUrl, setThumbUrl] = useState(() => file.downloadURL || null);
   const [textSnippet, setTextSnippet] = useState(null);
+  const [pdfThumb, setPdfThumb] = useState(() => file.thumbnailURL || null);
 
   const ext = file.name.split('.').pop()?.toLowerCase() || '';
   const mime = (file.mimeType || '').toLowerCase();
@@ -56,11 +58,24 @@ export default function FileTile({
       });
     }
 
+    // PDF Thumbnail generation
+    if (isPdf) {
+      if (file.thumbnailURL) {
+        setPdfThumb(file.thumbnailURL);
+      } else {
+        getPdfThumbnail(file).then((thumb) => {
+          if (active && thumb) {
+            setPdfThumb(thumb);
+          }
+        });
+      }
+    }
+
     return () => {
       active = false;
       if (url) URL.revokeObjectURL(url);
     };
-  }, [file.id, file.fileId, file.downloadURL, isImage, isVideo, isText]);
+  }, [file.id, file.fileId, file.downloadURL, file.thumbnailURL, isImage, isVideo, isText, isPdf]);
 
   // Render purely the visual representation without ugly permanent text labels
   const renderVisualContent = () => {
@@ -91,27 +106,41 @@ export default function FileTile({
       );
     }
 
-    // 3. PDF Document Sheet
+    // 3. PDF Document Sheet with real page 1 thumbnail preview
     if (isPdf) {
+      if (pdfThumb) {
+        return (
+          <div className="relative w-full h-full bg-white flex items-center justify-center overflow-hidden">
+            <img
+              src={pdfThumb}
+              alt={file.name}
+              className="w-full h-full object-cover object-top transition-transform duration-300 group-hover:scale-105"
+            />
+            {/* Subtle elegant PDF badge overlay in top-left */}
+            <span className="absolute top-2 left-2 px-1.5 py-0.5 rounded-md bg-rose-600/90 text-[10px] font-bold text-white tracking-wider shadow-md pointer-events-none backdrop-blur-sm">
+              PDF
+            </span>
+          </div>
+        );
+      }
+
+      // Clean fallback if rendering in progress or corrupted PDF
       return (
         <div className={`w-full h-full p-2.5 sm:p-3 flex flex-col justify-between relative overflow-hidden transition-colors ${
-          isLightMode ? 'bg-white/55' : 'bg-black/45'
+          isLightMode ? 'bg-white/65' : 'bg-black/55'
         }`}>
-          <div className={`w-full h-full rounded-xl p-2.5 flex flex-col justify-between ${
+          <div className={`w-full h-full rounded-xl p-3 flex flex-col justify-between ${
             isLightMode 
-              ? 'bg-rose-500/[0.06] border border-rose-500/15' 
-              : 'bg-rose-500/[0.08] border border-rose-500/20'
+              ? 'bg-rose-500/[0.08] border border-rose-500/20' 
+              : 'bg-rose-500/[0.12] border border-rose-500/30'
           }`}>
-            <div className="flex flex-col gap-1.5 opacity-40">
-              <div className="w-8 h-1 rounded-full bg-rose-500" />
-              <div className={`w-full h-0.5 rounded-full ${isLightMode ? 'bg-zinc-800/40' : 'bg-white/40'}`} />
-              <div className={`w-4/5 h-0.5 rounded-full ${isLightMode ? 'bg-zinc-800/40' : 'bg-white/40'}`} />
-              <div className={`w-3/4 h-0.5 rounded-full ${isLightMode ? 'bg-zinc-800/40' : 'bg-white/40'}`} />
+            <div className="flex items-center justify-between">
+              <span className="text-[11px] font-mono tracking-widest text-rose-500 font-bold">PDF</span>
+              <FileText className="w-4 h-4 text-rose-400 opacity-80" />
             </div>
-            <div className="flex items-center justify-between opacity-80">
-              <span className="text-[10px] font-mono tracking-widest text-rose-500 font-bold">PDF</span>
-              <div className={`w-4 h-0.5 rounded-full ${isLightMode ? 'bg-black/30' : 'bg-white/30'}`} />
-            </div>
+            <p className={`text-xs font-medium truncate ${isLightMode ? 'text-zinc-800' : 'text-white/90'}`}>
+              {file.name}
+            </p>
           </div>
         </div>
       );

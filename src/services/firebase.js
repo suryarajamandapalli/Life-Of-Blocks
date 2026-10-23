@@ -531,10 +531,21 @@ export async function uploadFileToCloud(uid, blockId, file, onProgress, customFi
   // 3. Fallback to Data URL if Storage is 404, unauthorized, or timed out
   const finalDownloadURL = downloadURL || dataUrl;
 
+  // Generate PDF first-page thumbnail if PDF file
+  let thumbnailURL = '';
+  if (file.type === 'application/pdf' || (file.name && file.name.toLowerCase().endsWith('.pdf'))) {
+    try {
+      const { renderPdfFirstPage } = await import('./pdfThumbnail');
+      thumbnailURL = await renderPdfFirstPage(dataUrl, 360) || '';
+    } catch (e) {
+      console.warn('[PDF Thumbnail Generation Notice]:', e?.message);
+    }
+  }
+
   if (onProgress) onProgress(90);
 
   // 4. Metadata saved directly into RTDB
-  // Stores fileId, userId, blockId, name, type, size, storagePath, downloadURL, createdAt
+  // Stores fileId, userId, blockId, name, type, size, storagePath, downloadURL, thumbnailURL, createdAt
   const fileMeta = {
     fileId,
     id: fileId,
@@ -546,6 +557,7 @@ export async function uploadFileToCloud(uid, blockId, file, onProgress, customFi
     size: file.size,
     storagePath: downloadURL ? storagePath : '',
     downloadURL: finalDownloadURL,
+    thumbnailURL,
     createdAt: Date.now(),
     updatedAt: Date.now()
   };

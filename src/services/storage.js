@@ -626,6 +626,14 @@ export async function uploadFile(blockId, file, onProgress) {
   // Guest Fallback (offline / unauthenticated)
   updateSyncStatus('syncing', 'Processing local file...');
   const dataUrl = await readFileAsOptimizedDataURL(file);
+  let thumbnailURL = '';
+  if (file.type === 'application/pdf' || (file.name && file.name.toLowerCase().endsWith('.pdf'))) {
+    try {
+      const { renderPdfFirstPage } = await import('./pdfThumbnail');
+      thumbnailURL = await renderPdfFirstPage(dataUrl, 360) || '';
+    } catch {}
+  }
+
   const fallbackMeta = {
     fileId,
     id: fileId,
@@ -637,6 +645,7 @@ export async function uploadFile(blockId, file, onProgress) {
     size: file.size,
     storagePath: '',
     downloadURL: dataUrl,
+    thumbnailURL,
     createdAt: Date.now(),
     updatedAt: Date.now()
   };
