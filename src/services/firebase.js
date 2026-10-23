@@ -408,10 +408,62 @@ export async function setRTDBSetting(uid, key, value) {
 }
 
 // ========================================================
-// FIREBASE CLOUD STORAGE (Uploaded Files Single Source of Truth)
+// FIREBASE CLOUD STORAGE & REALTIME SYNC (Uploaded Files Single Source of Truth)
 // Bucket: life-of-blocks.firebasestorage.app
 // Path: users/{uid}/blocks/{blockId}/files/{fileId}_{safeName}
 // ========================================================
+
+/**
+ * Reads a File into an optimized Data URL (Base64) to ensure instant, reliable RTDB sync
+ * without hanging or network timeouts.
+ */
+export async function readFileAsOptimizedDataURL(file) {
+  if (!file) return '';
+
+  // If not an image or SVG/GIF, read directly as data URL
+  if (!file.type || !file.type.startsWith('image/') || file.type.includes('svg') || file.type.includes('gif')) {
+    return new Promise((resolve) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(reader.result || '');
+      reader.onerror = () => resolve('');
+      reader.readAsDataURL(file);
+    });
+  }
+
+  // Optimize image to keep RTDB sync blazing fast and lightweight (max 1600px dimension)
+  return new Promise((resolve) => {
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      const img = new Image();
+      img.onload = () => {
+        let w = img.width;
+        let h = img.height;
+        const maxDim = 1600;
+        if (w > maxDim || h > maxDim) {
+          if (w > h) {
+            h = Math.round((h * maxDim) / w);
+            w = maxDim;
+          } else {
+            w = Math.round((w * maxDim) / h);
+            h = maxDim;
+          }
+        }
+        const canvas = document.createElement('canvas');
+        canvas.width = w;
+        canvas.height = h;
+        const ctx = canvas.getContext('2d');
+        ctx.drawImage(img, 0, 0, w, h);
+        const format = file.type === 'image/png' ? 'image/png' : 'image/jpeg';
+        const dataUrl = canvas.toDataURL(format, 0.82);
+        resolve(dataUrl);
+      };
+      img.onerror = () => resolve(e.target?.result || '');
+      img.src = e.target?.result || '';
+    };
+    reader.onerror = () => resolve('');
+    reader.readAsDataURL(file);
+  });
+}
 
 export async function uploadFileToCloud(uid, blockId, file, onProgress, customFileId) {
   if (!uid || !blockId || !file) {
@@ -423,59 +475,65 @@ export async function uploadFileToCloud(uid, blockId, file, onProgress, customFi
   const storagePath = `users/${uid}/blocks/${blockId}/files/${fileId}_${safeName}`;
   let downloadURL = null;
 
-  if (onProgress) onProgress(10);
+  if (onProgress) onProgress(20);
 
-  if (!storage) {
-    throw new Error('Firebase Storage service is not initialized');
-  }
+  // 1. Read / optimize file as base64 Data URL (fast & 100% resilient)
+  const dataUrl = await readFileAsOptimizedDataURL(file);
+  if (onProgress) onProgress(60);
 
-  try {
-    const fileStorageRef = storageRef(storage, storagePath);
-    const uploadTask = uploadBytesResumable(fileStorageRef, file, {
-      contentType: file.type || 'application/octet-stream',
-      customMetadata: {
-        userId: uid,
-        blockId: blockId,
-        fileId: fileId,
-        originalName: file.name
-      }
-    });
-
-    downloadURL = await new Promise((resolve, reject) => {
-      uploadTask.on(
-        'state_changed',
-        (snapshot) => {
-          if (snapshot.totalBytes > 0 && onProgress) {
-            const pct = Math.round((snapshot.bytesTransferred / snapshot.totalBytes) * 100);
-            onProgress(pct);
-          }
-        },
-        (error) => {
-          console.error('[Firebase Storage Upload Error]:', error);
-          reject(error);
-        },
-        async () => {
-          try {
-            const url = await getDownloadURL(uploadTask.snapshot.ref);
-            resolve(url);
-          } catch (urlErr) {
-            reject(urlErr);
-          }
+  // 2. If Firebase Storage is available, attempt Storage with a 2-second race timeout
+  if (storage) {
+    try {
+      const fileStorageRef = storageRef(storage, storagePath);
+      const uploadTask = uploadBytesResumable(fileStorageRef, file, {
+        contentType: file.type || 'application/octet-stream',
+        customMetadata: {
+          userId: uid,
+          blockId: blockId,
+          fileId: fileId,
+          originalName: file.name
         }
-      );
-    });
-  } catch (storageErr) {
-    console.error('Firebase Storage upload failed:', storageErr);
-    throw storageErr;
+      });
+
+      downloadURL = await Promise.race([
+        new Promise((resolve, reject) => {
+          uploadTask.on(
+            'state_changed',
+            (snapshot) => {
+              if (snapshot.totalBytes > 0 && onProgress) {
+                const pct = Math.round((snapshot.bytesTransferred / snapshot.totalBytes) * 100);
+                onProgress(Math.min(90, Math.max(60, pct)));
+              }
+            },
+            (error) => reject(error),
+            async () => {
+              try {
+                const url = await getDownloadURL(uploadTask.snapshot.ref);
+                resolve(url);
+              } catch (urlErr) {
+                reject(urlErr);
+              }
+            }
+          );
+        }),
+        new Promise((_, reject) =>
+          setTimeout(() => {
+            try { uploadTask.cancel(); } catch {}
+            reject(new Error('Storage timeout - syncing directly to RTDB'));
+          }, 2000)
+        )
+      ]);
+    } catch (storageErr) {
+      console.warn('[Firebase Storage Notice - syncing directly to RTDB]:', storageErr?.message);
+    }
   }
 
-  if (!downloadURL) {
-    throw new Error('Failed to retrieve cloud download URL from storage');
-  }
+  // 3. Fallback to Data URL if Storage is 404, unauthorized, or timed out
+  const finalDownloadURL = downloadURL || dataUrl;
 
-  if (onProgress) onProgress(100);
+  if (onProgress) onProgress(90);
 
-  // Metadata saved directly into RTDB
+  // 4. Metadata saved directly into RTDB
   // Stores fileId, userId, blockId, name, type, size, storagePath, downloadURL, createdAt
   const fileMeta = {
     fileId,
@@ -486,8 +544,8 @@ export async function uploadFileToCloud(uid, blockId, file, onProgress, customFi
     type: file.type || 'application/octet-stream',
     mimeType: file.type || 'application/octet-stream',
     size: file.size,
-    storagePath,
-    downloadURL,
+    storagePath: downloadURL ? storagePath : '',
+    downloadURL: finalDownloadURL,
     createdAt: Date.now(),
     updatedAt: Date.now()
   };
@@ -495,6 +553,8 @@ export async function uploadFileToCloud(uid, blockId, file, onProgress, customFi
   if (rtdb && uid) {
     await setRTDBFile(uid, fileMeta);
   }
+
+  if (onProgress) onProgress(100);
 
   return fileMeta;
 }

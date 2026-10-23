@@ -1,14 +1,13 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import CircularCheckbox from './CircularCheckbox';
 import { Pencil, Trash2, Check, X, Box, ChevronRight } from 'lucide-react';
-import { useAdaptiveContrast } from '../hooks/useAdaptiveContrast';
 import { sound } from '../services/sound';
 
 const LONG_PRESS_DURATION = 3000; // 3 seconds to convert to Sub-Block
 
 export default function TodoItem({
   todo,
-  wallpaper,
+  isLight = false,
   isSelected,
   deleteProgress = 0,
   subBlockTaskCount = 0,
@@ -20,8 +19,6 @@ export default function TodoItem({
   onOpenSubBlock
 }) {
   const rowRef = useRef(null);
-  const rowContrast = useAdaptiveContrast(rowRef, wallpaper);
-  const isLight = rowContrast.isLight;
 
   const [isEditing, setIsEditing] = useState(false);
   const [editText, setEditText] = useState(todo.title || '');
@@ -303,9 +300,14 @@ export default function TodoItem({
                     ? 'line-through text-zinc-500 font-normal'
                     : 'line-through text-white/45 font-normal'
                   : isLight
-                    ? 'text-zinc-900 font-medium'
+                    ? 'text-zinc-950 font-medium'
                     : 'text-white font-medium'
               }`}
+              style={{
+                textShadow: isLight
+                  ? '0 1px 2px rgba(255, 255, 255, 0.85)'
+                  : '0 1.5px 8px rgba(0, 0, 0, 0.85)'
+              }}
             >
               {todo.title}
             </span>

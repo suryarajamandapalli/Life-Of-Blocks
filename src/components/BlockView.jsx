@@ -299,7 +299,7 @@ export default function BlockView({
     setLastFailedFile(file);
     setUploadError(null);
     setUploadingFileName(file.name);
-    setUploadProgress(10);
+    setUploadProgress(20);
 
     try {
       await onUploadFile(block.id, file, (progress) => {
@@ -309,13 +309,12 @@ export default function BlockView({
       setUploadError(null);
     } catch (err) {
       console.error('File upload failed:', err);
-      const friendlyMsg = err?.message?.includes('sign in')
-        ? 'Please sign in to upload files and sync across devices'
-        : (err?.message || 'File upload failed. Please try again.');
-      setUploadError(friendlyMsg);
+      setUploadError('File upload failed. Please try again.');
     } finally {
-      setUploadProgress(null);
-      setUploadingFileName('');
+      setTimeout(() => {
+        setUploadProgress(null);
+        setUploadingFileName('');
+      }, 350);
     }
   };
 
@@ -324,7 +323,7 @@ export default function BlockView({
     const file = lastFailedFile;
     setUploadError(null);
     setUploadingFileName(file.name);
-    setUploadProgress(10);
+    setUploadProgress(20);
 
     try {
       await onUploadFile(block.id, file, (progress) => {
@@ -334,13 +333,12 @@ export default function BlockView({
       setUploadError(null);
     } catch (err) {
       console.error('File upload retry failed:', err);
-      const friendlyMsg = err?.message?.includes('sign in')
-        ? 'Please sign in to upload files and sync across devices'
-        : (err?.message || 'File upload failed. Please try again.');
-      setUploadError(friendlyMsg);
+      setUploadError('File upload failed. Please try again.');
     } finally {
-      setUploadProgress(null);
-      setUploadingFileName('');
+      setTimeout(() => {
+        setUploadProgress(null);
+        setUploadingFileName('');
+      }, 350);
     }
   };
 
@@ -434,7 +432,11 @@ export default function BlockView({
                 className={`text-3xl sm:text-4xl md:text-5xl font-bold tracking-tight leading-tight break-words cursor-pointer ${
                   isLight ? 'text-zinc-950' : 'text-white'
                 }`}
-                style={{ textShadow: isLight ? 'none' : '0 2px 14px rgba(0,0,0,0.6)' }}
+                style={{
+                  textShadow: isLight
+                    ? '0 1px 4px rgba(255, 255, 255, 0.95), 0 0 2px rgba(255, 255, 255, 0.7)'
+                    : '0 2px 14px rgba(0, 0, 0, 0.85), 0 1px 3px rgba(0, 0, 0, 0.7)'
+                }}
               >
                 {block.name}
               </h1>
@@ -454,9 +456,14 @@ export default function BlockView({
 
         {/* TASKS */}
         <div className="mb-10">
-          <div className={`text-xs font-semibold tracking-wider uppercase mb-3 ${
-            isLight ? 'text-zinc-600' : 'text-white/50'
-          }`}>
+          <div 
+            className={`text-xs font-semibold tracking-wider uppercase mb-3 ${
+              isLight ? 'text-zinc-800' : 'text-white/60'
+            }`}
+            style={{
+              textShadow: isLight ? '0 1px 2px rgba(255, 255, 255, 0.85)' : '0 1px 4px rgba(0, 0, 0, 0.85)'
+            }}
+          >
             Tasks
           </div>
 
@@ -476,7 +483,7 @@ export default function BlockView({
                   <TodoItem
                     key={todo.id}
                     todo={todo}
-                    wallpaper={wallpaper}
+                    isLight={isLight}
                     isSelected={todo.id === selectedTodoId}
                     deleteProgress={todo.id === selectedTodoId ? deleteProgress : 0}
                     subBlockTaskCount={subBlockTasks.length}
@@ -493,7 +500,12 @@ export default function BlockView({
           )}
 
           {!loadingTodos && todos.length === 0 && !isAddingTodo && (
-            <p className={`text-sm py-2 mb-2 ${isLight ? 'text-zinc-400' : 'text-white/30'}`}>No tasks yet</p>
+            <p 
+              className={`text-sm py-2 mb-2 ${isLight ? 'text-zinc-700' : 'text-white/50'}`}
+              style={{ textShadow: isLight ? '0 1px 2px rgba(255, 255, 255, 0.85)' : '0 1px 4px rgba(0, 0, 0, 0.85)' }}
+            >
+              No tasks yet
+            </p>
           )}
 
           {isAddingTodo ? (
@@ -557,9 +569,10 @@ export default function BlockView({
           ) : (
             <button
               onClick={() => setIsAddingTodo(true)}
-              className={`text-sm font-medium py-2 px-1 transition-all cursor-pointer ${
-                isLight ? 'text-zinc-500 hover:text-zinc-800' : 'text-white/40 hover:text-white/70'
+              className={`text-sm font-medium py-1.5 px-0.5 transition-all cursor-pointer ${
+                isLight ? 'text-zinc-800 hover:text-black' : 'text-white/60 hover:text-white'
               }`}
+              style={{ textShadow: isLight ? '0 1px 2px rgba(255, 255, 255, 0.85)' : '0 1px 4px rgba(0, 0, 0, 0.85)' }}
             >
               + Add task
             </button>
@@ -568,9 +581,14 @@ export default function BlockView({
 
         {/* FILES */}
         <div>
-          <div className={`text-xs font-semibold tracking-wider uppercase mb-3 ${
-            isLight ? 'text-zinc-600' : 'text-white/50'
-          }`}>
+          <div 
+            className={`text-xs font-semibold tracking-wider uppercase mb-3 ${
+              isLight ? 'text-zinc-800' : 'text-white/60'
+            }`}
+            style={{
+              textShadow: isLight ? '0 1px 2px rgba(255, 255, 255, 0.85)' : '0 1px 4px rgba(0, 0, 0, 0.85)'
+            }}
+          >
             Files
           </div>
 

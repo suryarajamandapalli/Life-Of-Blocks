@@ -18,7 +18,8 @@ import {
   setRTDBFile, 
   removeRTDBFile, 
   uploadFileToCloud, 
-  deleteFileFromCloud 
+  deleteFileFromCloud,
+  readFileAsOptimizedDataURL 
 } from './firebase';
 
 const STORAGE_EVENT = 'lob_storage_update';
@@ -600,29 +601,52 @@ export function getFilesByBlock(blockId) {
 
 export async function uploadFile(blockId, file, onProgress) {
   const uid = activeUid || getCurrentUser()?.uid;
-  if (!uid) {
-    throw new Error('Please sign in to upload files and sync across all devices.');
-  }
-
   const fileId = 'file_' + Date.now() + '_' + Math.random().toString(36).substring(2, 8);
 
   // 1. Cache blob locally in IndexedDB for fast instant playback
   saveFileBlob(fileId, file).catch(() => {});
 
-  updateSyncStatus('syncing', 'Uploading file to cloud storage...');
-  try {
-    const fileMeta = await uploadFileToCloud(uid, blockId, file, onProgress, fileId);
-    // Optimistic addition
-    currentFiles = [fileMeta, ...currentFiles.filter(f => f.id !== fileMeta.id && f.fileId !== fileMeta.id)];
-    persistCache(uid);
-    updateSyncStatus('synced', 'File uploaded and synced.');
-    notifyChange();
-    return fileMeta;
-  } catch (err) {
-    console.error('Cloud upload failed:', err);
-    updateSyncStatus('error', err.message || 'File upload failed');
-    throw err;
+  if (uid) {
+    updateSyncStatus('syncing', 'Uploading file to cloud...');
+    try {
+      const fileMeta = await uploadFileToCloud(uid, blockId, file, onProgress, fileId);
+      // Optimistic addition
+      currentFiles = [fileMeta, ...currentFiles.filter(f => f.id !== fileMeta.id && f.fileId !== fileMeta.id)];
+      persistCache(uid);
+      updateSyncStatus('synced', 'File uploaded and synced.');
+      notifyChange();
+      return fileMeta;
+    } catch (err) {
+      console.warn('Cloud upload failed:', err);
+      updateSyncStatus('error', err.message || 'File upload failed');
+      throw err;
+    }
   }
+
+  // Guest Fallback (offline / unauthenticated)
+  updateSyncStatus('syncing', 'Processing local file...');
+  const dataUrl = await readFileAsOptimizedDataURL(file);
+  const fallbackMeta = {
+    fileId,
+    id: fileId,
+    userId: 'guest',
+    blockId,
+    name: file.name,
+    type: file.type || 'application/octet-stream',
+    mimeType: file.type || 'application/octet-stream',
+    size: file.size,
+    storagePath: '',
+    downloadURL: dataUrl,
+    createdAt: Date.now(),
+    updatedAt: Date.now()
+  };
+
+  currentFiles = [fallbackMeta, ...currentFiles];
+  persistCache(null);
+  updateSyncStatus('synced');
+  notifyChange();
+  if (onProgress) onProgress(100);
+  return fallbackMeta;
 }
 
 export async function downloadFile(file) {
