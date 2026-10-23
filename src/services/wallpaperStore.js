@@ -1,9 +1,10 @@
-// Wallpaper Lock, Starred Favorites & Multi-Device Sync Engine
-// Connects LocalStorage and Firebase Realtime Database (RTDB)
+// Wallpaper Active State, Lock, Starred Favorites & Real-Time Multi-Device Sync Engine
+// Realtime Database Path: users/{uid}/settings/activeWallpaper, users/{uid}/settings/wallpaperLock, users/{uid}/starredWallpapers
 
 import { rtdb, getCurrentUser, subscribeAuth } from './firebase';
 import { ref, onValue, set, remove, get } from 'firebase/database';
 
+const ACTIVE_WALLPAPER_KEY = 'lob_active_wallpaper';
 const LOCKED_KEY = 'lob_wallpaper_locked';
 const LOCKED_DATA_KEY = 'lob_locked_wallpaper';
 const STARRED_KEY = 'lob_starred_wallpapers';
@@ -12,6 +13,40 @@ const WALLPAPER_EVENT = 'lob_wallpaper_update';
 function notify() {
   if (typeof window !== 'undefined') {
     window.dispatchEvent(new Event(WALLPAPER_EVENT));
+  }
+}
+
+// ----------------- ACTIVE WALLPAPER (SYNCED ACROSS ALL DEVICES) -----------------
+
+export function getActiveWallpaper() {
+  try {
+    const raw = localStorage.getItem(ACTIVE_WALLPAPER_KEY);
+    return raw ? JSON.parse(raw) : null;
+  } catch {
+    return null;
+  }
+}
+
+export async function setActiveWallpaper(wallpaper) {
+  if (!wallpaper || !wallpaper.url) return;
+
+  try {
+    localStorage.setItem(ACTIVE_WALLPAPER_KEY, JSON.stringify(wallpaper));
+    notify();
+
+    // Sync active wallpaper to Realtime Database
+    const user = getCurrentUser();
+    if (user?.uid && rtdb) {
+      const activeRef = ref(rtdb, `users/${user.uid}/settings/activeWallpaper`);
+      await set(activeRef, {
+        id: wallpaper.id,
+        name: wallpaper.name || 'Wallpaper',
+        url: wallpaper.url,
+        updatedAt: Date.now()
+      });
+    }
+  } catch (e) {
+    console.warn('Failed to sync active wallpaper:', e);
   }
 }
 
@@ -39,6 +74,7 @@ export async function setWallpaperLock(locked, wallpaper = null) {
     localStorage.setItem(LOCKED_KEY, String(locked));
     if (locked && wallpaper) {
       localStorage.setItem(LOCKED_DATA_KEY, JSON.stringify(wallpaper));
+      localStorage.setItem(ACTIVE_WALLPAPER_KEY, JSON.stringify(wallpaper));
     } else if (!locked) {
       localStorage.removeItem(LOCKED_DATA_KEY);
     }
@@ -50,6 +86,14 @@ export async function setWallpaperLock(locked, wallpaper = null) {
       const lockRef = ref(rtdb, `users/${user.uid}/settings/wallpaperLock`);
       if (locked && wallpaper) {
         await set(lockRef, { isLocked: true, wallpaper, updatedAt: Date.now() });
+        // Also update active wallpaper in RTDB
+        const activeRef = ref(rtdb, `users/${user.uid}/settings/activeWallpaper`);
+        await set(activeRef, {
+          id: wallpaper.id,
+          name: wallpaper.name || 'Wallpaper',
+          url: wallpaper.url,
+          updatedAt: Date.now()
+        });
       } else {
         await set(lockRef, { isLocked: false, updatedAt: Date.now() });
       }
@@ -145,17 +189,36 @@ export async function removeStarredWallpaper(wallpaperId) {
   }
 }
 
-// ----------------- REALTIME DATABASE SYNC -----------------
+// ----------------- REALTIME DATABASE SYNC ENGINE -----------------
 
 let activeUnsubs = [];
 
 function setupWallpaperRTDBSync(uid) {
-  activeUnsubs.forEach(u => u());
+  activeUnsubs.forEach(u => {
+    try { if (typeof u === 'function') u(); } catch {}
+  });
   activeUnsubs = [];
 
   if (!uid || !rtdb) return;
 
-  // 1. Listen for Wallpaper Lock updates from other devices
+  // 1. Listen for Active Wallpaper updates from ANY device
+  const activeWpRef = ref(rtdb, `users/${uid}/settings/activeWallpaper`);
+  const unsubActive = onValue(activeWpRef, (snap) => {
+    const val = snap.val();
+    if (val && val.url) {
+      localStorage.setItem(ACTIVE_WALLPAPER_KEY, JSON.stringify(val));
+      notify();
+    } else {
+      // If cloud has no active wallpaper, push current local wallpaper if one exists
+      const localActive = getActiveWallpaper();
+      if (localActive?.url) {
+        set(activeWpRef, { ...localActive, updatedAt: Date.now() }).catch(() => {});
+      }
+    }
+  });
+  activeUnsubs.push(unsubActive);
+
+  // 2. Listen for Wallpaper Lock updates from other devices
   const lockRef = ref(rtdb, `users/${uid}/settings/wallpaperLock`);
   const unsubLock = onValue(lockRef, (snap) => {
     const val = snap.val();
@@ -163,6 +226,7 @@ function setupWallpaperRTDBSync(uid) {
       localStorage.setItem(LOCKED_KEY, String(val.isLocked));
       if (val.isLocked && val.wallpaper) {
         localStorage.setItem(LOCKED_DATA_KEY, JSON.stringify(val.wallpaper));
+        localStorage.setItem(ACTIVE_WALLPAPER_KEY, JSON.stringify(val.wallpaper));
       } else {
         localStorage.removeItem(LOCKED_DATA_KEY);
       }
@@ -171,7 +235,7 @@ function setupWallpaperRTDBSync(uid) {
   });
   activeUnsubs.push(unsubLock);
 
-  // 2. Listen for Starred Wallpapers updates from other devices
+  // 3. Listen for Starred Wallpapers updates from other devices
   const starredRef = ref(rtdb, `users/${uid}/starredWallpapers`);
   const unsubStarred = onValue(starredRef, (snap) => {
     const val = snap.val();
@@ -180,7 +244,6 @@ function setupWallpaperRTDBSync(uid) {
         ? val.filter(Boolean)
         : Object.keys(val).map(k => ({ id: k, ...val[k] }));
 
-      // Merge with local list non-destructively
       const localList = getStarredWallpapers();
       const map = new Map();
       localList.forEach(item => map.set(item.id, item));
@@ -190,7 +253,6 @@ function setupWallpaperRTDBSync(uid) {
       localStorage.setItem(STARRED_KEY, JSON.stringify(merged));
       notify();
     } else {
-      // If cloud is empty but local has items, push local items to RTDB
       const localList = getStarredWallpapers();
       if (localList.length > 0) {
         localList.forEach(item => {
@@ -207,7 +269,9 @@ if (typeof window !== 'undefined') {
     if (user?.uid) {
       setupWallpaperRTDBSync(user.uid);
     } else {
-      activeUnsubs.forEach(u => u());
+      activeUnsubs.forEach(u => {
+        try { if (typeof u === 'function') u(); } catch {}
+      });
       activeUnsubs = [];
     }
   });

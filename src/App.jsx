@@ -18,6 +18,8 @@ import {
   isWallpaperLocked, 
   getLockedWallpaper, 
   setWallpaperLock, 
+  getActiveWallpaper,
+  setActiveWallpaper,
   subscribeWallpaperStore 
 } from './services/wallpaperStore';
 import { sound } from './services/sound';
@@ -56,12 +58,14 @@ export default function App() {
   const [isGalleryOpen, setIsGalleryOpen] = useState(false);
   const [activeAmbient, setActiveAmbient] = useState(null);
 
-  // Wallpaper state (restores locked wallpaper if user locked one)
+  // Wallpaper state (restores synced active/locked wallpaper across all devices)
   const [wallpaper, setWallpaper] = useState(() => {
     if (isWallpaperLocked()) {
       const lockedWp = getLockedWallpaper();
       if (lockedWp) return lockedWp;
     }
+    const syncedActive = getActiveWallpaper();
+    if (syncedActive) return syncedActive;
     return getRandomWallpaper();
   });
   const [wallpaperLoaded, setWallpaperLoaded] = useState(false);
@@ -126,54 +130,68 @@ export default function App() {
     fetchLiveWallhavenWallpapers().then((liveList) => {
       if (liveList && liveList.length > 0) {
         setLiveWallpapers(liveList);
-        // Only randomize if wallpaper is NOT locked
-        if (!isWallpaperLocked()) {
+        // Only randomize if no active or locked wallpaper is saved in cloud or cache
+        const existing = isWallpaperLocked() ? getLockedWallpaper() : getActiveWallpaper();
+        if (!existing) {
           const randomItem = liveList[Math.floor(Math.random() * liveList.length)];
           setWallpaper(randomItem);
+          setActiveWallpaper(randomItem);
         }
       }
     });
   }, []);
 
-  // Listen for Wallpaper Lock updates across devices via RTDB
+  // Listen for Active Wallpaper & Lock updates across devices in real-time via RTDB
   useEffect(() => {
-    const unsub = subscribeWallpaperStore(() => {
+    const handleRemoteWallpaperUpdate = () => {
       if (isWallpaperLocked()) {
         const lockedWp = getLockedWallpaper();
         if (lockedWp && lockedWp.id !== wallpaper?.id) {
           setWallpaper(lockedWp);
         }
+      } else {
+        const syncedWp = getActiveWallpaper();
+        if (syncedWp && syncedWp.id !== wallpaper?.id) {
+          setWallpaper(syncedWp);
+        }
       }
-    });
+    };
+
+    handleRemoteWallpaperUpdate();
+    const unsub = subscribeWallpaperStore(handleRemoteWallpaperUpdate);
     return () => unsub();
   }, [wallpaper?.id]);
 
-  // Shuffle to another random wallpaper
+  // Shuffle to another random wallpaper and sync to ALL devices in real time
   const handleNextWallpaper = async () => {
     setIsRefreshingWallpaper(true);
     try {
+      let nextWp = null;
       if (liveWallpapers.length > 1) {
-        const remaining = liveWallpapers.filter(w => w.id !== wallpaper.id);
-        const next = remaining[Math.floor(Math.random() * remaining.length)];
-        setWallpaper(next);
+        const remaining = liveWallpapers.filter(w => w.id !== wallpaper?.id);
+        nextWp = remaining[Math.floor(Math.random() * remaining.length)];
       } else {
         const freshList = await fetchLiveWallhavenWallpapers();
         if (freshList && freshList.length > 0) {
           setLiveWallpapers(freshList);
-          const next = freshList[Math.floor(Math.random() * freshList.length)];
-          setWallpaper(next);
+          nextWp = freshList[Math.floor(Math.random() * freshList.length)];
         }
+      }
+      if (nextWp) {
+        setWallpaper(nextWp);
+        await setActiveWallpaper(nextWp);
       }
     } finally {
       setTimeout(() => setIsRefreshingWallpaper(false), 350);
     }
   };
 
-  // Select wallpaper directly from Starred Gallery
-  const handleSelectWallpaper = (selectedWp) => {
+  // Select wallpaper directly from Starred Gallery and sync to ALL devices
+  const handleSelectWallpaper = async (selectedWp) => {
     setWallpaper(selectedWp);
+    await setActiveWallpaper(selectedWp);
     if (isWallpaperLocked()) {
-      setWallpaperLock(true, selectedWp);
+      await setWallpaperLock(true, selectedWp);
     }
   };
 
