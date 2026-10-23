@@ -95,3 +95,35 @@ export async function fetchLiveWallhavenWallpapers() {
   }
   return WALLHAVEN_WALLPAPERS;
 }
+
+// Search Wallhaven 4K Wallpapers with live results for the Search tab
+export async function searchWallhavenWallpapers(query = 'anime', page = 1) {
+  const cleanQ = (query || 'nature').trim();
+  const isNative = typeof window !== 'undefined' && window.Capacitor?.isNativePlatform?.();
+  const baseUrl = isNative ? 'https://life-of-blocks.vercel.app' : '';
+  const url = `${baseUrl}/api/wallhaven/search?q=${encodeURIComponent(cleanQ)}&page=${page}&sorting=toplist`;
+
+  try {
+    const res = await fetch(url);
+    if (!res.ok) throw new Error(`Wallhaven API returned ${res.status}`);
+    const data = await res.json();
+    if (data && data.data && data.data.length > 0) {
+      return data.data.map(item => ({
+        id: item.id,
+        name: `Wallhaven #${item.id}`,
+        url: item.path,
+        thumb: item.thumbs?.small || item.thumbs?.original || item.path,
+        resolution: item.resolution,
+        category: item.category
+      }));
+    }
+  } catch (err) {
+    console.warn('Search Wallhaven error, returning curated fallback:', err);
+  }
+
+  // Fallback matching query words
+  const fallbackMatch = WALLHAVEN_WALLPAPERS.filter(w => 
+    w.name.toLowerCase().includes(cleanQ.toLowerCase())
+  );
+  return fallbackMatch.length > 0 ? fallbackMatch : WALLHAVEN_WALLPAPERS;
+}
