@@ -67,6 +67,9 @@ export default function BlockView({
   const [undoTodo, setUndoTodo] = useState(null);
   const undoTimerRef = useRef(null);
 
+  // Task deletion confirmation modal (tick to confirm, cross to cancel)
+  const [deletingTodo, setDeletingTodo] = useState(null);
+
   // File viewing and deletion confirmation
   const [viewingFile, setViewingFile] = useState(null);
   const [deletingFile, setDeletingFile] = useState(null);
@@ -145,6 +148,10 @@ export default function BlockView({
           setViewingFile(null);
           return;
         }
+        if (deletingTodo) {
+          setDeletingTodo(null);
+          return;
+        }
         if (deletingFile) {
           setDeletingFile(null);
           return;
@@ -155,6 +162,15 @@ export default function BlockView({
           return;
         }
         onBack();
+        return;
+      }
+
+      // Enter to confirm deletion if modal is active
+      if (e.key === 'Enter' && deletingTodo) {
+        e.preventDefault();
+        const t = deletingTodo;
+        setDeletingTodo(null);
+        handleConfirmDeleteTask(t);
         return;
       }
 
@@ -172,12 +188,12 @@ export default function BlockView({
         return;
       }
 
-      // Long-press Delete key to delete selected task
+      // Long-press Delete key to delete selected task (1.5 seconds deliberate hold)
       if (e.key === 'Delete' || e.key === 'Backspace') {
         if (selectedTodoId && !deleteHoldStartRef.current) {
           e.preventDefault();
           deleteHoldStartRef.current = Date.now();
-          const HOLD_TIME = 600;
+          const HOLD_TIME = 1500; // Increased to 1.5 seconds
 
           const step = () => {
             const elapsed = Date.now() - deleteHoldStartRef.current;
@@ -191,7 +207,7 @@ export default function BlockView({
               setDeleteProgress(0);
               const todoToDelete = todos.find((t) => t.id === selectedTodoId);
               if (todoToDelete) {
-                handleDeleteTask(todoToDelete);
+                setDeletingTodo(todoToDelete);
               }
             }
           };
@@ -247,6 +263,7 @@ export default function BlockView({
     isEditingTitle,
     viewingFile,
     deletingFile,
+    deletingTodo,
     onBack
   ]);
 
@@ -276,6 +293,11 @@ export default function BlockView({
   };
 
   const handleDeleteTask = (todo) => {
+    if (!todo) return;
+    setDeletingTodo(todo);
+  };
+
+  const handleConfirmDeleteTask = (todo) => {
     if (!todo) return;
     setUndoTodo(todo);
     onDeleteTodo(block.id, todo.id);
@@ -671,6 +693,40 @@ export default function BlockView({
       {/* ========================================================
           05 — BOTTOM FLOATING TOASTS & MODALS
           ======================================================== */}
+
+      {/* Task Deletion Confirmation Bar — tick (✓) to confirm, cross (✗) to cancel */}
+      {deletingTodo && (
+        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 flex items-center gap-3.5 px-4 py-2.5 rounded-2xl bg-black/90 border border-white/20 text-white shadow-2xl backdrop-blur-xl animate-modal-in max-w-[90vw]">
+          <span className="text-xs sm:text-sm font-normal truncate max-w-[220px]">
+            Delete <span className="font-semibold text-white">{deletingTodo.title}</span>?
+          </span>
+          <div className="flex items-center gap-2 flex-shrink-0">
+            {/* Tick: Confirm Delete */}
+            <button
+              onClick={() => {
+                const t = deletingTodo;
+                setDeletingTodo(null);
+                handleConfirmDeleteTask(t);
+              }}
+              title="Delete task (Enter)"
+              aria-label="Confirm delete"
+              className="p-1.5 rounded-xl bg-rose-500/90 hover:bg-rose-500 text-white shadow-sm transition-all cursor-pointer active:scale-90 flex items-center justify-center"
+            >
+              <Check className="w-4 h-4 stroke-[3]" />
+            </button>
+
+            {/* Cross: Cancel */}
+            <button
+              onClick={() => setDeletingTodo(null)}
+              title="Cancel (Esc)"
+              aria-label="Cancel delete"
+              className="p-1.5 rounded-xl bg-white/10 hover:bg-white/20 text-white/80 hover:text-white transition-all cursor-pointer active:scale-90 flex items-center justify-center"
+            >
+              <X className="w-4 h-4 stroke-[3]" />
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Undo Task Deletion Toast */}
       {undoTodo && (
