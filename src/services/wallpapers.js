@@ -68,6 +68,19 @@ const DYNAMIC_CATEGORIES = [
 ];
 
 /**
+ * Normalizes user queries by removing noise words that prevent Wallhaven tag matches
+ * (e.g. "Dark BG" -> "dark", "4k wallpaper anime" -> "anime")
+ */
+export function cleanWallhavenQuery(raw) {
+  if (!raw) return 'nature';
+  let q = raw.toLowerCase()
+    .replace(/\b(wallpaper|wallpapers|bg|background|backgrounds|4k|hd|8k|image|images|pic|pics|photo|photos)\b/gi, '')
+    .trim()
+    .replace(/\s+/g, ' ');
+  return q || raw.trim() || 'nature';
+}
+
+/**
  * Fetches a batch of truly random 4K Wallhaven wallpapers using a randomized seed and dynamic theme.
  */
 export async function fetchLiveWallhavenWallpapers() {
@@ -100,20 +113,45 @@ export async function fetchLiveWallhavenWallpapers() {
 
 /**
  * Searches Wallhaven live for a specific keyword/query entered by the user.
+ * Automatically cleans query noise ("Dark BG" -> "dark") and provides smart multi-step retries.
  */
 export async function searchWallhavenWallpapers(query = 'anime', page = 1) {
-  const cleanQ = (query || 'nature').trim();
+  const cleanQ = cleanWallhavenQuery(query);
   const seed = Math.random().toString(36).substring(2, 8);
   const isNative = typeof window !== 'undefined' && window.Capacitor?.isNativePlatform?.();
   const baseUrl = isNative ? 'https://life-of-blocks.vercel.app' : '';
-  const url = `${baseUrl}/api/wallhaven/search?q=${encodeURIComponent(cleanQ)}&page=${page}&sorting=toplist&seed=${seed}`;
+
+  const fetchAttempt = async (searchWord) => {
+    try {
+      const url = `${baseUrl}/api/wallhaven/search?q=${encodeURIComponent(searchWord)}&page=${page}&sorting=toplist&seed=${seed}&purity=100`;
+      const res = await fetch(url);
+      if (!res.ok) return [];
+      const data = await res.json();
+      return data?.data && Array.isArray(data.data) ? data.data : [];
+    } catch {
+      return [];
+    }
+  };
 
   try {
-    const res = await fetch(url);
-    if (!res.ok) throw new Error(`Wallhaven API returned ${res.status}`);
-    const data = await res.json();
-    if (data?.data && Array.isArray(data.data) && data.data.length > 0) {
-      return data.data.map(item => ({
+    // 1. Try cleaned query
+    let results = await fetchAttempt(cleanQ);
+
+    // 2. If 0 results, try first keyword (e.g. "dark" from "dark aesthetic")
+    if (results.length === 0) {
+      const firstWord = cleanQ.split(' ')[0];
+      if (firstWord && firstWord !== cleanQ) {
+        results = await fetchAttempt(firstWord);
+      }
+    }
+
+    // 3. If still 0 results, try broader category
+    if (results.length === 0) {
+      results = await fetchAttempt(query.includes('dark') ? 'dark' : 'toplist');
+    }
+
+    if (results.length > 0) {
+      return results.map(item => ({
         id: item.id,
         name: `Wallhaven #${item.id}`,
         url: item.path,
