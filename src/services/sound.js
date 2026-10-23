@@ -77,84 +77,173 @@ class SoundController {
     }
   }
 
-  // Realistic glass stress crack sound for block breaking interaction
+  // Movie-quality acoustic glass stress crack sound for block breaking interaction
   playGlassCrack(level = 1) {
     try {
       this.init();
       if (!this.ctx) return;
       const now = this.ctx.currentTime;
 
-      // High-frequency crystal snap
-      const osc = this.ctx.createOscillator();
-      const gain = this.ctx.createGain();
-      const filter = this.ctx.createBiquadFilter();
+      // 1. Physical strike impact thud (low-mid transient knock)
+      const thudOsc = this.ctx.createOscillator();
+      const thudGain = this.ctx.createGain();
+      thudOsc.type = 'triangle';
+      thudOsc.frequency.setValueAtTime(level === 1 ? 240 : 190, now);
+      thudOsc.frequency.exponentialRampToValueAtTime(40, now + 0.05);
+      thudGain.gain.setValueAtTime(level === 1 ? 0.35 : 0.45, now);
+      thudGain.gain.exponentialRampToValueAtTime(0.001, now + 0.05);
+      thudOsc.connect(thudGain);
+      thudGain.connect(this.ctx.destination);
+      thudOsc.start(now);
+      thudOsc.stop(now + 0.06);
 
-      filter.type = 'highpass';
-      filter.frequency.setValueAtTime(level === 1 ? 2200 : 3200, now);
-
-      osc.type = 'sawtooth';
-      osc.frequency.setValueAtTime(level === 1 ? 1900 : 2700, now);
-      osc.frequency.exponentialRampToValueAtTime(700, now + 0.07);
-
-      gain.gain.setValueAtTime(level === 1 ? 0.18 : 0.25, now);
-      gain.gain.exponentialRampToValueAtTime(0.001, now + 0.07);
-
-      osc.connect(filter);
-      filter.connect(gain);
-      gain.connect(this.ctx.destination);
-
-      osc.start(now);
-      osc.stop(now + 0.08);
-    } catch {}
-  }
-
-  // Realistic crystalline glass shatter sound
-  playGlassShatter() {
-    try {
-      this.init();
-      if (!this.ctx) return;
-      const now = this.ctx.currentTime;
-
-      // 1. Noise burst of shattered crystal fragments
-      const bufferSize = Math.floor(this.ctx.sampleRate * 0.35);
+      // 2. High-pressure acoustic glass fissure snap (shaped high-frequency crackle)
+      const bufferSize = Math.floor(this.ctx.sampleRate * 0.08);
       const buffer = this.ctx.createBuffer(1, bufferSize, this.ctx.sampleRate);
       const data = buffer.getChannelData(0);
       for (let i = 0; i < bufferSize; i++) {
-        data[i] = (Math.random() * 2 - 1) * Math.exp(-i / (this.ctx.sampleRate * 0.065));
+        data[i] = (Math.random() * 2 - 1) * Math.exp(-i / (this.ctx.sampleRate * 0.015));
       }
       const noise = this.ctx.createBufferSource();
       noise.buffer = buffer;
 
       const noiseFilter = this.ctx.createBiquadFilter();
-      noiseFilter.type = 'bandpass';
-      noiseFilter.frequency.setValueAtTime(4200, now);
-      noiseFilter.Q.setValueAtTime(2.5, now);
+      noiseFilter.type = 'highpass';
+      noiseFilter.frequency.setValueAtTime(level === 1 ? 4000 : 3000, now);
 
       const noiseGain = this.ctx.createGain();
-      noiseGain.gain.setValueAtTime(0.3, now);
-      noiseGain.gain.exponentialRampToValueAtTime(0.001, now + 0.3);
+      noiseGain.gain.setValueAtTime(level === 1 ? 0.4 : 0.55, now);
+      noiseGain.gain.exponentialRampToValueAtTime(0.001, now + 0.07);
 
       noise.connect(noiseFilter);
       noiseFilter.connect(noiseGain);
       noiseGain.connect(this.ctx.destination);
       noise.start(now);
 
-      // 2. Crystalline resonant harmonics
-      [2200, 3400, 4800, 6200].forEach((freq, idx) => {
+      // 3. Inharmonic crystalline glass modal rings
+      const modalFreqs = level === 1 
+        ? [3800, 5600, 8400] 
+        : [2900, 4600, 6800, 9200];
+
+      modalFreqs.forEach((freq, idx) => {
         const osc = this.ctx.createOscillator();
         const gain = this.ctx.createGain();
         osc.type = 'sine';
-        osc.frequency.setValueAtTime(freq + Math.random() * 150, now);
-        osc.frequency.exponentialRampToValueAtTime(freq * 0.45, now + 0.25 + idx * 0.04);
+        osc.frequency.setValueAtTime(freq + (Math.random() - 0.5) * 80, now);
 
-        gain.gain.setValueAtTime(0.1, now);
-        gain.gain.exponentialRampToValueAtTime(0.001, now + 0.2 + idx * 0.04);
+        gain.gain.setValueAtTime(0.08 / (idx + 1), now);
+        gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.06 + idx * 0.02);
 
         osc.connect(gain);
         gain.connect(this.ctx.destination);
-        osc.start(now + idx * 0.01);
+        osc.start(now);
+        osc.stop(now + 0.12);
+      });
+
+      // For Level 2: add a secondary micro-fracture snap 18ms later (crack propagating across panel)
+      if (level >= 2) {
+        const snapDelay = 0.018;
+        const snapOsc = this.ctx.createOscillator();
+        const snapGain = this.ctx.createGain();
+        snapOsc.type = 'sawtooth';
+        snapOsc.frequency.setValueAtTime(6200, now + snapDelay);
+        snapOsc.frequency.exponentialRampToValueAtTime(1800, now + snapDelay + 0.04);
+        snapGain.gain.setValueAtTime(0.25, now + snapDelay);
+        snapGain.gain.exponentialRampToValueAtTime(0.001, now + snapDelay + 0.04);
+        snapOsc.connect(snapGain);
+        snapGain.connect(this.ctx.destination);
+        snapOsc.start(now + snapDelay);
+        snapOsc.stop(now + snapDelay + 0.05);
+      }
+    } catch {}
+  }
+
+  // Hyper-realistic crystalline glass explosion & shatter sound with falling shard scatter
+  playGlassShatter() {
+    try {
+      this.init();
+      if (!this.ctx) return;
+      const now = this.ctx.currentTime;
+
+      // 1. Deep Sub Impact Boom (the weight of the smash)
+      const subOsc = this.ctx.createOscillator();
+      const subGain = this.ctx.createGain();
+      subOsc.type = 'sine';
+      subOsc.frequency.setValueAtTime(140, now);
+      subOsc.frequency.exponentialRampToValueAtTime(32, now + 0.22);
+      subGain.gain.setValueAtTime(0.65, now);
+      subGain.gain.exponentialRampToValueAtTime(0.001, now + 0.22);
+      subOsc.connect(subGain);
+      subGain.connect(this.ctx.destination);
+      subOsc.start(now);
+      subOsc.stop(now + 0.25);
+
+      // 2. High-energy explosive fracture blast (wideband white/pink noise explosion)
+      const bufferSize = Math.floor(this.ctx.sampleRate * 0.45);
+      const buffer = this.ctx.createBuffer(1, bufferSize, this.ctx.sampleRate);
+      const data = buffer.getChannelData(0);
+      for (let i = 0; i < bufferSize; i++) {
+        const t = i / this.ctx.sampleRate;
+        const env = Math.exp(-t / 0.06) * 0.8 + Math.exp(-t / 0.25) * 0.3;
+        data[i] = (Math.random() * 2 - 1) * env;
+      }
+      const noise = this.ctx.createBufferSource();
+      noise.buffer = buffer;
+
+      const noiseFilter = this.ctx.createBiquadFilter();
+      noiseFilter.type = 'bandpass';
+      noiseFilter.frequency.setValueAtTime(5400, now);
+      noiseFilter.frequency.exponentialRampToValueAtTime(1800, now + 0.35);
+      noiseFilter.Q.setValueAtTime(1.8, now);
+
+      const noiseGain = this.ctx.createGain();
+      noiseGain.gain.setValueAtTime(0.6, now);
+      noiseGain.gain.exponentialRampToValueAtTime(0.001, now + 0.42);
+
+      noise.connect(noiseFilter);
+      noiseFilter.connect(noiseGain);
+      noiseGain.connect(this.ctx.destination);
+      noise.start(now);
+
+      // 3. Glass plate inharmonic modal resonances (violent fracture ring)
+      [2150, 3280, 4720, 6350, 7890, 9600].forEach((freq, idx) => {
+        const osc = this.ctx.createOscillator();
+        const gain = this.ctx.createGain();
+        osc.type = 'sine';
+        osc.frequency.setValueAtTime(freq + (Math.random() - 0.5) * 120, now);
+        osc.frequency.exponentialRampToValueAtTime(freq * 0.55, now + 0.18 + idx * 0.03);
+
+        gain.gain.setValueAtTime(0.16 / (idx * 0.4 + 1), now);
+        gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.22 + idx * 0.03);
+
+        osc.connect(gain);
+        gain.connect(this.ctx.destination);
+        osc.start(now + idx * 0.004);
         osc.stop(now + 0.35);
       });
+
+      // 4. Cascading Shower of Falling & Tinkling Shards (The Realism Multiplier!)
+      // 18 tiny crystalline pings randomly cascading as glass fragments bounce and disperse
+      for (let s = 0; s < 18; s++) {
+        const delay = 0.04 + Math.random() * 0.45;
+        const shardFreq = 4000 + Math.random() * 5500;
+        const shardDuration = 0.03 + Math.random() * 0.04;
+
+        const shardOsc = this.ctx.createOscillator();
+        const shardGain = this.ctx.createGain();
+        shardOsc.type = 'sine';
+        shardOsc.frequency.setValueAtTime(shardFreq, now + delay);
+
+        const shardVol = 0.04 * (1 - delay / 0.55);
+        shardGain.gain.setValueAtTime(0, now + delay);
+        shardGain.gain.linearRampToValueAtTime(shardVol, now + delay + 0.003);
+        shardGain.gain.exponentialRampToValueAtTime(0.0001, now + delay + shardDuration);
+
+        shardOsc.connect(shardGain);
+        shardGain.connect(this.ctx.destination);
+        shardOsc.start(now + delay);
+        shardOsc.stop(now + delay + shardDuration + 0.01);
+      }
     } catch {}
   }
 
