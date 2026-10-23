@@ -77,6 +77,87 @@ class SoundController {
     }
   }
 
+  // Realistic glass stress crack sound for block breaking interaction
+  playGlassCrack(level = 1) {
+    try {
+      this.init();
+      if (!this.ctx) return;
+      const now = this.ctx.currentTime;
+
+      // High-frequency crystal snap
+      const osc = this.ctx.createOscillator();
+      const gain = this.ctx.createGain();
+      const filter = this.ctx.createBiquadFilter();
+
+      filter.type = 'highpass';
+      filter.frequency.setValueAtTime(level === 1 ? 2200 : 3200, now);
+
+      osc.type = 'sawtooth';
+      osc.frequency.setValueAtTime(level === 1 ? 1900 : 2700, now);
+      osc.frequency.exponentialRampToValueAtTime(700, now + 0.07);
+
+      gain.gain.setValueAtTime(level === 1 ? 0.18 : 0.25, now);
+      gain.gain.exponentialRampToValueAtTime(0.001, now + 0.07);
+
+      osc.connect(filter);
+      filter.connect(gain);
+      gain.connect(this.ctx.destination);
+
+      osc.start(now);
+      osc.stop(now + 0.08);
+    } catch {}
+  }
+
+  // Realistic crystalline glass shatter sound
+  playGlassShatter() {
+    try {
+      this.init();
+      if (!this.ctx) return;
+      const now = this.ctx.currentTime;
+
+      // 1. Noise burst of shattered crystal fragments
+      const bufferSize = Math.floor(this.ctx.sampleRate * 0.35);
+      const buffer = this.ctx.createBuffer(1, bufferSize, this.ctx.sampleRate);
+      const data = buffer.getChannelData(0);
+      for (let i = 0; i < bufferSize; i++) {
+        data[i] = (Math.random() * 2 - 1) * Math.exp(-i / (this.ctx.sampleRate * 0.065));
+      }
+      const noise = this.ctx.createBufferSource();
+      noise.buffer = buffer;
+
+      const noiseFilter = this.ctx.createBiquadFilter();
+      noiseFilter.type = 'bandpass';
+      noiseFilter.frequency.setValueAtTime(4200, now);
+      noiseFilter.Q.setValueAtTime(2.5, now);
+
+      const noiseGain = this.ctx.createGain();
+      noiseGain.gain.setValueAtTime(0.3, now);
+      noiseGain.gain.exponentialRampToValueAtTime(0.001, now + 0.3);
+
+      noise.connect(noiseFilter);
+      noiseFilter.connect(noiseGain);
+      noiseGain.connect(this.ctx.destination);
+      noise.start(now);
+
+      // 2. Crystalline resonant harmonics
+      [2200, 3400, 4800, 6200].forEach((freq, idx) => {
+        const osc = this.ctx.createOscillator();
+        const gain = this.ctx.createGain();
+        osc.type = 'sine';
+        osc.frequency.setValueAtTime(freq + Math.random() * 150, now);
+        osc.frequency.exponentialRampToValueAtTime(freq * 0.45, now + 0.25 + idx * 0.04);
+
+        gain.gain.setValueAtTime(0.1, now);
+        gain.gain.exponentialRampToValueAtTime(0.001, now + 0.2 + idx * 0.04);
+
+        osc.connect(gain);
+        gain.connect(this.ctx.destination);
+        osc.start(now + idx * 0.01);
+        osc.stop(now + 0.35);
+      });
+    } catch {}
+  }
+
   // Ambient sound generator: 'rain', 'space', 'waves'
   startAmbient(type = 'rain') {
     try {

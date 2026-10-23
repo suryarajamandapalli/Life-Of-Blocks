@@ -46,6 +46,7 @@ export default function App() {
 
   // Zen Mode (triggered on block completion, stays until user chooses to return)
   const [isCalmModeActive, setIsCalmModeActive] = useState(false);
+  const [calmModeBlock, setCalmModeBlock] = useState(null);
   const [calmModeBlockName, setCalmModeBlockName] = useState('');
   const prevCompletionRef = useRef(new Map());
   const isInitialMountRef = useRef(true);
@@ -232,8 +233,9 @@ export default function App() {
     }
   }, [currentBlockId]);
 
-  const triggerCalmMode = useCallback((name) => {
-    setCalmModeBlockName(name || '');
+  const triggerCalmMode = useCallback((block) => {
+    setCalmModeBlock(block || null);
+    setCalmModeBlockName(block?.name || '');
     setIsCalmModeActive(true);
   }, []);
 
@@ -258,7 +260,7 @@ export default function App() {
 
       // Trigger Calm Mode when transitioning from incomplete to 100% completed
       if (wasDone === false && isDone === true) {
-        triggerCalmMode(b.name);
+        triggerCalmMode(b);
       }
 
       prevCompletionRef.current.set(b.id, isDone);
@@ -644,11 +646,16 @@ export default function App() {
         isDanger={true}
       />
 
-      {/* Zen Mode (GSAP Animated 4K Video, Ambient Soaking Music & "Complete more Blocks in your life" CTA) */}
+      {/* Zen Mode (Break the Block -> Glass Shatter -> 4K Nature/Space/Rain Zen Mode) */}
       <CalmModeOverlay
         isActive={isCalmModeActive}
+        block={calmModeBlock}
         blockName={calmModeBlockName}
-        onClose={() => setIsCalmModeActive(false)}
+        totalTasks={todos.filter(t => t.blockId === calmModeBlock?.id).length}
+        onClose={() => {
+          setIsCalmModeActive(false);
+          setCalmModeBlock(null);
+        }}
       />
     </div>
   );
