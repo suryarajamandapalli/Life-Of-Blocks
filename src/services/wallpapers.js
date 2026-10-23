@@ -55,53 +55,72 @@ export function getRandomWallpaper() {
 }
 
 const DYNAMIC_CATEGORIES = [
-  'nature mountains lake',
-  'space universe nebula',
-  'aesthetic neon night',
-  'retro motorcycle bike',
+  'nature mountains lake landscape',
+  'space universe nebula cosmos',
+  'retro motorcycle superbike',
   'supercar sports car',
-  'cyberpunk city rain',
-  'minimalist dark clean',
-  'celestial galaxy stars',
-  'dramatic golden hour sunset',
-  'deep forest misty'
+  'cyberpunk neon city architecture',
+  'minimalist dark clean abstract',
+  'celestial galaxy night stars',
+  'dramatic golden hour sunset ocean',
+  'deep forest pine misty',
+  'aurora borealis night sky'
+];
+
+// Blocked vulgar search terms to sanitize input
+const BLOCKED_WORDS = [
+  'nsfw', 'nude', 'naked', 'porn', 'sex', 'sexy', 'bikini', 'boobs', 'breasts',
+  'cleavage', 'lewd', 'erotic', 'hentai', 'ecchi', 'pussy', 'dick', 'ass',
+  'lingerie', 'underwear', 'waifu', 'girl', 'girls', 'woman', 'women', 'babe',
+  'babes', 'hot', 'swimsuit', 'sensual', 'vulgar'
 ];
 
 /**
- * Normalizes user queries by removing noise words that prevent Wallhaven tag matches
- * (e.g. "Dark BG" -> "dark", "4k wallpaper anime" -> "anime")
+ * Normalizes user queries by removing noise words and scrubbing vulgar/NSFW terms
  */
 export function cleanWallhavenQuery(raw) {
-  if (!raw) return 'nature';
+  if (!raw) return 'nature landscape';
   let q = raw.toLowerCase()
     .replace(/\b(wallpaper|wallpapers|bg|background|backgrounds|4k|hd|8k|image|images|pic|pics|photo|photos)\b/gi, '')
-    .trim()
-    .replace(/\s+/g, ' ');
-  return q || raw.trim() || 'nature';
+    .trim();
+
+  // Strip vulgar words from query
+  for (const bad of BLOCKED_WORDS) {
+    const reg = new RegExp(`\\b${bad}\\b`, 'gi');
+    q = q.replace(reg, '');
+  }
+
+  q = q.trim().replace(/\s+/g, ' ');
+  return q || 'nature landscape';
 }
 
 /**
  * Fetches a batch of truly random 4K Wallhaven wallpapers using a randomized seed and dynamic theme.
+ * Enforces categories=100 (General only) & purity=100 (SFW only) to guarantee family-friendly content.
  */
 export async function fetchLiveWallhavenWallpapers() {
   const query = DYNAMIC_CATEGORIES[Math.floor(Math.random() * DYNAMIC_CATEGORIES.length)];
   const seed = Math.random().toString(36).substring(2, 8);
   const isNative = typeof window !== 'undefined' && window.Capacitor?.isNativePlatform?.();
   const baseUrl = isNative ? 'https://life-of-blocks.vercel.app' : '';
-  const url = `${baseUrl}/api/wallhaven/search?q=${encodeURIComponent(query)}&sorting=random&seed=${seed}&purity=100`;
+  const url = `${baseUrl}/api/wallhaven/search?q=${encodeURIComponent(query)}&sorting=random&seed=${seed}&purity=100&categories=100`;
 
   try {
     const res = await fetch(url);
     if (!res.ok) throw new Error(`Wallhaven returned HTTP ${res.status}`);
     const data = await res.json();
     if (data?.data && Array.isArray(data.data) && data.data.length > 0) {
-      return data.data.map(item => ({
-        id: item.id,
-        name: `Wallhaven #${item.id}`,
-        url: item.path,
-        thumb: item.thumbs?.small || item.thumbs?.original || item.path,
-        resolution: item.resolution
-      }));
+      // Exclude category 'people' and non-sfw
+      const filtered = data.data.filter(item => (!item.category || item.category !== 'people') && (!item.purity || item.purity === 'sfw'));
+      if (filtered.length > 0) {
+        return filtered.map(item => ({
+          id: item.id,
+          name: `Wallhaven #${item.id}`,
+          url: item.path,
+          thumb: item.thumbs?.small || item.thumbs?.original || item.path,
+          resolution: item.resolution
+        }));
+      }
     }
   } catch (err) {
     console.warn('Live Wallhaven random fetch notice:', err);
@@ -113,9 +132,9 @@ export async function fetchLiveWallhavenWallpapers() {
 
 /**
  * Searches Wallhaven live for a specific keyword/query entered by the user.
- * Automatically cleans query noise ("Dark BG" -> "dark") and provides smart multi-step retries.
+ * Automatically cleans query noise, enforces SFW purity=100 & categories=100 (General only, zero people/vulgarity).
  */
-export async function searchWallhavenWallpapers(query = 'anime', page = 1) {
+export async function searchWallhavenWallpapers(query = 'nature landscape 4k', page = 1) {
   const cleanQ = cleanWallhavenQuery(query);
   const seed = Math.random().toString(36).substring(2, 8);
   const isNative = typeof window !== 'undefined' && window.Capacitor?.isNativePlatform?.();
@@ -123,7 +142,7 @@ export async function searchWallhavenWallpapers(query = 'anime', page = 1) {
 
   const fetchAttempt = async (searchWord) => {
     try {
-      const url = `${baseUrl}/api/wallhaven/search?q=${encodeURIComponent(searchWord)}&page=${page}&sorting=toplist&seed=${seed}&purity=100`;
+      const url = `${baseUrl}/api/wallhaven/search?q=${encodeURIComponent(searchWord)}&page=${page}&sorting=toplist&seed=${seed}&purity=100&categories=100`;
       const res = await fetch(url);
       if (!res.ok) return [];
       const data = await res.json();
@@ -137,7 +156,7 @@ export async function searchWallhavenWallpapers(query = 'anime', page = 1) {
     // 1. Try cleaned query
     let results = await fetchAttempt(cleanQ);
 
-    // 2. If 0 results, try first keyword (e.g. "dark" from "dark aesthetic")
+    // 2. If 0 results, try first keyword (e.g. "space" from "space nebula")
     if (results.length === 0) {
       const firstWord = cleanQ.split(' ')[0];
       if (firstWord && firstWord !== cleanQ) {
@@ -145,20 +164,24 @@ export async function searchWallhavenWallpapers(query = 'anime', page = 1) {
       }
     }
 
-    // 3. If still 0 results, try broader category
+    // 3. If still 0 results, try broader safe category
     if (results.length === 0) {
-      results = await fetchAttempt(query.includes('dark') ? 'dark' : 'toplist');
+      results = await fetchAttempt(query.includes('dark') ? 'dark abstract' : 'nature');
     }
 
     if (results.length > 0) {
-      return results.map(item => ({
-        id: item.id,
-        name: `Wallhaven #${item.id}`,
-        url: item.path,
-        thumb: item.thumbs?.small || item.thumbs?.original || item.path,
-        resolution: item.resolution,
-        category: item.category
-      }));
+      // Exclude category 'people' and non-sfw
+      const filtered = results.filter(item => (!item.category || item.category !== 'people') && (!item.purity || item.purity === 'sfw'));
+      if (filtered.length > 0) {
+        return filtered.map(item => ({
+          id: item.id,
+          name: `Wallhaven #${item.id}`,
+          url: item.path,
+          thumb: item.thumbs?.small || item.thumbs?.original || item.path,
+          resolution: item.resolution,
+          category: item.category
+        }));
+      }
     }
   } catch (err) {
     console.warn('Search Wallhaven notice:', err);

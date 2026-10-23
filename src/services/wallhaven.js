@@ -63,8 +63,8 @@ export function saveWallpaper(url) {
 }
 
 export async function searchWallhaven(query = 'space', page = 1) {
-  // Use Vite proxy endpoint
-  const url = `/api/wallhaven/search?q=${encodeURIComponent(query)}&apikey=${API_KEY}&atleast=1920x1080&sorting=toplist&page=${page}`;
+  // Use Vite proxy endpoint with strict SFW and General category only
+  const url = `/api/wallhaven/search?q=${encodeURIComponent(query)}&apikey=${API_KEY}&atleast=1920x1080&sorting=toplist&page=${page}&purity=100&categories=100`;
 
   try {
     const response = await fetch(url);

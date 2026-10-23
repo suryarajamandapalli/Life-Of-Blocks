@@ -21,13 +21,14 @@ import {
 import { searchWallhavenWallpapers } from '../services/wallpapers';
 
 const POPULAR_TAGS = [
-  { label: 'Anime', query: 'anime aesthetic' },
-  { label: 'Space', query: 'space 4k nebula galaxy' },
-  { label: 'Nature', query: 'nature mountains landscape lake' },
-  { label: 'Cyberpunk', query: 'cyberpunk neon city' },
-  { label: 'Cars', query: 'retro sports car supercar' },
-  { label: 'Minimal', query: 'minimalist dark clean 4k' },
-  { label: 'Sunset', query: 'sunset horizon golden hour' }
+  { label: 'Nature', query: 'nature mountains landscape 4k' },
+  { label: 'Space', query: 'space nebula galaxy cosmos 4k' },
+  { label: 'Bikes', query: 'superbike motorcycle 4k' },
+  { label: 'Cars', query: 'supercar sports car 4k' },
+  { label: 'Cyberpunk', query: 'cyberpunk neon city rain architecture' },
+  { label: 'Scenery', query: 'aesthetic scenery landscape 4k' },
+  { label: 'Minimal', query: 'minimalist dark clean abstract 4k' },
+  { label: 'Sunset', query: 'sunset ocean horizon 4k' }
 ];
 
 export default function StarredWallpapersModal({
@@ -57,7 +58,7 @@ export default function StarredWallpapersModal({
   // Initial popular search when opening the search tab for the first time
   useEffect(() => {
     if (isOpen && activeTab === 'search' && !hasSearched && searchResults.length === 0) {
-      handlePerformSearch('anime aesthetic');
+      handlePerformSearch('nature landscape 4k');
     }
   }, [isOpen, activeTab, hasSearched]);
 
@@ -74,7 +75,7 @@ export default function StarredWallpapersModal({
   if (!isOpen) return null;
 
   const handlePerformSearch = async (queryText) => {
-    const q = (queryText !== undefined ? queryText : searchQuery).trim() || 'anime';
+    const q = (queryText !== undefined ? queryText : searchQuery).trim() || 'nature landscape 4k';
     setIsSearching(true);
     setHasSearched(true);
 
