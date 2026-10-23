@@ -31,6 +31,7 @@ import SpotifyWidget from './components/SpotifyWidget';
 import AppTray from './components/AppTray';
 import QuickNotesModal from './components/QuickNotesModal';
 import GoogleAuthButton from './components/GoogleAuthButton';
+import SyncStatusBadge from './components/SyncStatusBadge';
 import WallpaperControls from './components/WallpaperControls';
 import StarredWallpapersModal from './components/StarredWallpapersModal';
 import CalmModeOverlay from './components/CalmModeOverlay';
@@ -415,8 +416,11 @@ export default function App() {
         }}
       />
 
-      {/* Top Controls: Google Auth & Wallpaper Controls */}
+      {/* Top Controls: Sync Badge, Google Auth & Wallpaper Controls */}
       <div className="fixed top-3.5 right-4 sm:top-5 sm:right-6 z-20 flex items-center gap-2">
+        {/* Realtime Database Sync Status Badge */}
+        <SyncStatusBadge />
+
         {/* Google Authentication & RTDB Sync Button */}
         <GoogleAuthButton />
 
