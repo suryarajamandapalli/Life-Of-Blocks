@@ -11,9 +11,10 @@ export default async function handler(req, res) {
 
   const query = req.query.q || 'nature';
   const page = req.query.page || '1';
-  const sorting = req.query.sorting || 'toplist';
+  const sorting = req.query.sorting || 'random';
+  const seed = req.query.seed || Math.random().toString(36).substring(2, 8);
 
-  const wallhavenUrl = `https://wallhaven.cc/api/v1/search?q=${encodeURIComponent(query)}&apikey=${API_KEY}&atleast=1920x1080&sorting=${sorting}&page=${page}`;
+  let wallhavenUrl = `https://wallhaven.cc/api/v1/search?q=${encodeURIComponent(query)}&apikey=${API_KEY}&atleast=1920x1080&sorting=${sorting}&page=${page}&purity=100&seed=${encodeURIComponent(seed)}`;
 
   try {
     const response = await fetch(wallhavenUrl, {

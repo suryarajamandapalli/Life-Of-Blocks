@@ -1,5 +1,8 @@
 // Wallpaper Active State, Lock, Starred Favorites & Real-Time Multi-Device Sync Engine
-// Realtime Database Path: users/{uid}/settings/activeWallpaper, users/{uid}/settings/wallpaperLock, users/{uid}/starredWallpapers
+// Realtime Database Path:
+// users/{uid}/settings/activeWallpaper
+// users/{uid}/settings/wallpaperLock
+// users/{uid}/starredWallpapers
 
 import { rtdb, getCurrentUser, subscribeAuth } from './firebase';
 import { ref, onValue, set, remove, get } from 'firebase/database';
@@ -9,6 +12,9 @@ const LOCKED_KEY = 'lob_wallpaper_locked';
 const LOCKED_DATA_KEY = 'lob_locked_wallpaper';
 const STARRED_KEY = 'lob_starred_wallpapers';
 const WALLPAPER_EVENT = 'lob_wallpaper_update';
+
+let currentUid = null;
+let activeUnsubs = [];
 
 function notify() {
   if (typeof window !== 'undefined') {
@@ -30,20 +36,22 @@ export function getActiveWallpaper() {
 export async function setActiveWallpaper(wallpaper) {
   if (!wallpaper || !wallpaper.url) return;
 
+  const payload = {
+    id: wallpaper.id || 'wp_' + Date.now(),
+    name: wallpaper.name || 'Wallhaven Wallpaper',
+    url: wallpaper.url,
+    updatedAt: Date.now()
+  };
+
   try {
-    localStorage.setItem(ACTIVE_WALLPAPER_KEY, JSON.stringify(wallpaper));
+    localStorage.setItem(ACTIVE_WALLPAPER_KEY, JSON.stringify(payload));
     notify();
 
-    // Sync active wallpaper to Realtime Database
-    const user = getCurrentUser();
-    if (user?.uid && rtdb) {
-      const activeRef = ref(rtdb, `users/${user.uid}/settings/activeWallpaper`);
-      await set(activeRef, {
-        id: wallpaper.id,
-        name: wallpaper.name || 'Wallpaper',
-        url: wallpaper.url,
-        updatedAt: Date.now()
-      });
+    // Sync active wallpaper to Realtime Database for all devices
+    const uid = currentUid || getCurrentUser()?.uid;
+    if (uid && rtdb) {
+      const activeRef = ref(rtdb, `users/${uid}/settings/activeWallpaper`);
+      await set(activeRef, payload);
     }
   } catch (e) {
     console.warn('Failed to sync active wallpaper:', e);
@@ -73,24 +81,29 @@ export async function setWallpaperLock(locked, wallpaper = null) {
   try {
     localStorage.setItem(LOCKED_KEY, String(locked));
     if (locked && wallpaper) {
-      localStorage.setItem(LOCKED_DATA_KEY, JSON.stringify(wallpaper));
-      localStorage.setItem(ACTIVE_WALLPAPER_KEY, JSON.stringify(wallpaper));
+      const wpPayload = {
+        id: wallpaper.id || 'wp_' + Date.now(),
+        name: wallpaper.name || 'Wallhaven Wallpaper',
+        url: wallpaper.url,
+        updatedAt: Date.now()
+      };
+      localStorage.setItem(LOCKED_DATA_KEY, JSON.stringify(wpPayload));
+      localStorage.setItem(ACTIVE_WALLPAPER_KEY, JSON.stringify(wpPayload));
     } else if (!locked) {
       localStorage.removeItem(LOCKED_DATA_KEY);
     }
     notify();
 
     // Sync to Realtime Database
-    const user = getCurrentUser();
-    if (user?.uid && rtdb) {
-      const lockRef = ref(rtdb, `users/${user.uid}/settings/wallpaperLock`);
+    const uid = currentUid || getCurrentUser()?.uid;
+    if (uid && rtdb) {
+      const lockRef = ref(rtdb, `users/${uid}/settings/wallpaperLock`);
       if (locked && wallpaper) {
         await set(lockRef, { isLocked: true, wallpaper, updatedAt: Date.now() });
-        // Also update active wallpaper in RTDB
-        const activeRef = ref(rtdb, `users/${user.uid}/settings/activeWallpaper`);
+        const activeRef = ref(rtdb, `users/${uid}/settings/activeWallpaper`);
         await set(activeRef, {
-          id: wallpaper.id,
-          name: wallpaper.name || 'Wallpaper',
+          id: wallpaper.id || 'wp_' + Date.now(),
+          name: wallpaper.name || 'Wallhaven Wallpaper',
           url: wallpaper.url,
           updatedAt: Date.now()
         });
@@ -121,21 +134,21 @@ export function isWallpaperStarred(wallpaperId) {
 }
 
 export async function toggleStarWallpaper(wallpaper) {
-  if (!wallpaper || !wallpaper.id) return false;
+  if (!wallpaper || !wallpaper.url) return false;
   const list = getStarredWallpapers();
-  const exists = list.some(item => item.id === wallpaper.id);
+  const exists = list.some(item => item.id === wallpaper.id || item.url === wallpaper.url);
 
   let updatedList;
   let isNowStarred;
 
   if (exists) {
-    updatedList = list.filter(item => item.id !== wallpaper.id);
+    updatedList = list.filter(item => item.id !== wallpaper.id && item.url !== wallpaper.url);
     isNowStarred = false;
   } else {
     updatedList = [
       {
-        id: wallpaper.id,
-        name: wallpaper.name || `Wallhaven #${wallpaper.id}`,
+        id: wallpaper.id || 'wp_' + Date.now(),
+        name: wallpaper.name || `Wallhaven Wallpaper`,
         url: wallpaper.url,
         starredAt: Date.now()
       },
@@ -149,13 +162,14 @@ export async function toggleStarWallpaper(wallpaper) {
     notify();
 
     // Sync to Realtime Database
-    const user = getCurrentUser();
-    if (user?.uid && rtdb) {
-      const starRef = ref(rtdb, `users/${user.uid}/starredWallpapers/${wallpaper.id}`);
+    const uid = currentUid || getCurrentUser()?.uid;
+    if (uid && rtdb) {
+      const starId = wallpaper.id || 'star_' + Date.now();
+      const starRef = ref(rtdb, `users/${uid}/starredWallpapers/${starId}`);
       if (isNowStarred) {
         await set(starRef, {
-          id: wallpaper.id,
-          name: wallpaper.name || `Wallhaven #${wallpaper.id}`,
+          id: starId,
+          name: wallpaper.name || `Wallhaven Wallpaper`,
           url: wallpaper.url,
           starredAt: Date.now()
         });
@@ -179,9 +193,9 @@ export async function removeStarredWallpaper(wallpaperId) {
     localStorage.setItem(STARRED_KEY, JSON.stringify(updatedList));
     notify();
 
-    const user = getCurrentUser();
-    if (user?.uid && rtdb) {
-      const starRef = ref(rtdb, `users/${user.uid}/starredWallpapers/${wallpaperId}`);
+    const uid = currentUid || getCurrentUser()?.uid;
+    if (uid && rtdb) {
+      const starRef = ref(rtdb, `users/${uid}/starredWallpapers/${wallpaperId}`);
       await remove(starRef);
     }
   } catch (e) {
@@ -191,8 +205,6 @@ export async function removeStarredWallpaper(wallpaperId) {
 
 // ----------------- REALTIME DATABASE SYNC ENGINE -----------------
 
-let activeUnsubs = [];
-
 function setupWallpaperRTDBSync(uid) {
   activeUnsubs.forEach(u => {
     try { if (typeof u === 'function') u(); } catch {}
@@ -201,7 +213,7 @@ function setupWallpaperRTDBSync(uid) {
 
   if (!uid || !rtdb) return;
 
-  // 1. Listen for Active Wallpaper updates from ANY device
+  // 1. Listen for Active Wallpaper updates from ANY device in real time (unlocked or locked)
   const activeWpRef = ref(rtdb, `users/${uid}/settings/activeWallpaper`);
   const unsubActive = onValue(activeWpRef, (snap) => {
     const val = snap.val();
@@ -209,7 +221,7 @@ function setupWallpaperRTDBSync(uid) {
       localStorage.setItem(ACTIVE_WALLPAPER_KEY, JSON.stringify(val));
       notify();
     } else {
-      // If cloud has no active wallpaper, push current local wallpaper if one exists
+      // If cloud has no active wallpaper yet, push current local wallpaper
       const localActive = getActiveWallpaper();
       if (localActive?.url) {
         set(activeWpRef, { ...localActive, updatedAt: Date.now() }).catch(() => {});
@@ -264,8 +276,10 @@ function setupWallpaperRTDBSync(uid) {
   activeUnsubs.push(unsubStarred);
 }
 
+// Global Auth State Observer
 if (typeof window !== 'undefined') {
   subscribeAuth((user) => {
+    currentUid = user?.uid || null;
     if (user?.uid) {
       setupWallpaperRTDBSync(user.uid);
     } else {

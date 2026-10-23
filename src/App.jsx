@@ -127,18 +127,17 @@ export default function App() {
 
   // Fetch live random Wallhaven wallpapers on startup
   useEffect(() => {
-    fetchLiveWallhavenWallpapers().then((liveList) => {
-      if (liveList && liveList.length > 0) {
-        setLiveWallpapers(liveList);
-        // Only randomize if no active or locked wallpaper is saved in cloud or cache
-        const existing = isWallpaperLocked() ? getLockedWallpaper() : getActiveWallpaper();
-        if (!existing) {
+    // Only randomize if no active or locked wallpaper is saved in cloud or cache
+    const existing = isWallpaperLocked() ? getLockedWallpaper() : getActiveWallpaper();
+    if (!existing) {
+      fetchLiveWallhavenWallpapers().then((liveList) => {
+        if (liveList && liveList.length > 0) {
           const randomItem = liveList[Math.floor(Math.random() * liveList.length)];
           setWallpaper(randomItem);
           setActiveWallpaper(randomItem);
         }
-      }
-    });
+      });
+    }
   }, []);
 
   // Listen for Active Wallpaper & Lock updates across devices in real-time via RTDB
@@ -146,12 +145,12 @@ export default function App() {
     const handleRemoteWallpaperUpdate = () => {
       if (isWallpaperLocked()) {
         const lockedWp = getLockedWallpaper();
-        if (lockedWp && lockedWp.id !== wallpaper?.id) {
+        if (lockedWp && (lockedWp.id !== wallpaper?.id || lockedWp.url !== wallpaper?.url)) {
           setWallpaper(lockedWp);
         }
       } else {
         const syncedWp = getActiveWallpaper();
-        if (syncedWp && syncedWp.id !== wallpaper?.id) {
+        if (syncedWp && (syncedWp.id !== wallpaper?.id || syncedWp.url !== wallpaper?.url)) {
           setWallpaper(syncedWp);
         }
       }
@@ -160,25 +159,22 @@ export default function App() {
     handleRemoteWallpaperUpdate();
     const unsub = subscribeWallpaperStore(handleRemoteWallpaperUpdate);
     return () => unsub();
-  }, [wallpaper?.id]);
+  }, [wallpaper?.id, wallpaper?.url]);
 
   // Shuffle to another random wallpaper and sync to ALL devices in real time
   const handleNextWallpaper = async () => {
     setIsRefreshingWallpaper(true);
     try {
+      // Fetch a fresh batch of live random 4K wallpapers from Wallhaven
+      const freshList = await fetchLiveWallhavenWallpapers();
       let nextWp = null;
-      if (liveWallpapers.length > 1) {
-        const remaining = liveWallpapers.filter(w => w.id !== wallpaper?.id);
-        nextWp = remaining[Math.floor(Math.random() * remaining.length)];
-      } else {
-        const freshList = await fetchLiveWallhavenWallpapers();
-        if (freshList && freshList.length > 0) {
-          setLiveWallpapers(freshList);
-          nextWp = freshList[Math.floor(Math.random() * freshList.length)];
-        }
+      if (freshList && freshList.length > 0) {
+        const remaining = freshList.filter(w => w.url !== wallpaper?.url);
+        nextWp = remaining.length > 0 ? remaining[Math.floor(Math.random() * remaining.length)] : freshList[0];
       }
       if (nextWp) {
         setWallpaper(nextWp);
+        // Sync across ALL devices in real time via RTDB!
         await setActiveWallpaper(nextWp);
       }
     } finally {
