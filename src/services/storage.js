@@ -171,7 +171,7 @@ export async function deleteFileBlob(id) {
 }
 
 export async function getFileObjectUrl(id) {
-  const meta = getFilesMeta().find(f => f.id === id);
+  const meta = getFilesMeta().find(f => f.id === id || f.fileId === id);
   if (meta && meta.downloadURL) {
     return meta.downloadURL;
   }
@@ -182,7 +182,7 @@ export async function getFileObjectUrl(id) {
 }
 
 export async function getFileContent(id, format = 'text') {
-  const meta = getFilesMeta().find(f => f.id === id);
+  const meta = getFilesMeta().find(f => f.id === id || f.fileId === id);
   if (meta && meta.downloadURL) {
     try {
       const res = await fetch(meta.downloadURL);
@@ -599,60 +599,43 @@ export function getFilesByBlock(blockId) {
 }
 
 export async function uploadFile(blockId, file, onProgress) {
-  const fileId = 'file_' + Date.now() + '_' + Math.random().toString(36).substring(2, 7);
+  const uid = activeUid || getCurrentUser()?.uid;
+  if (!uid) {
+    throw new Error('Please sign in to upload files and sync across all devices.');
+  }
+
+  const fileId = 'file_' + Date.now() + '_' + Math.random().toString(36).substring(2, 8);
 
   // 1. Cache blob locally in IndexedDB for fast instant playback
   saveFileBlob(fileId, file).catch(() => {});
 
-  if (activeUid) {
-    updateSyncStatus('syncing', 'Uploading file to Firebase Storage...');
-    try {
-      const fileMeta = await uploadFileToCloud(activeUid, blockId, file, onProgress);
-      // Optimistic addition
-      currentFiles = [fileMeta, ...currentFiles.filter(f => f.id !== fileMeta.id)];
-      persistCache(activeUid);
-      updateSyncStatus('synced', 'File uploaded and synced.');
-      notifyChange();
-      return fileMeta;
-    } catch (err) {
-      console.warn('Cloud upload failed:', err);
-      updateSyncStatus('error', 'File upload failed.');
-    }
+  updateSyncStatus('syncing', 'Uploading file to cloud storage...');
+  try {
+    const fileMeta = await uploadFileToCloud(uid, blockId, file, onProgress, fileId);
+    // Optimistic addition
+    currentFiles = [fileMeta, ...currentFiles.filter(f => f.id !== fileMeta.id && f.fileId !== fileMeta.id)];
+    persistCache(uid);
+    updateSyncStatus('synced', 'File uploaded and synced.');
+    notifyChange();
+    return fileMeta;
+  } catch (err) {
+    console.error('Cloud upload failed:', err);
+    updateSyncStatus('error', err.message || 'File upload failed');
+    throw err;
   }
-
-  // Guest / Fallback
-  const fallbackMeta = {
-    id: fileId,
-    blockId,
-    name: file.name,
-    size: file.size,
-    mimeType: file.type || 'application/octet-stream',
-    downloadURL: '',
-    storagePath: '',
-    createdAt: Date.now(),
-    updatedAt: Date.now()
-  };
-
-  currentFiles = [fallbackMeta, ...currentFiles];
-  persistCache(activeUid);
-  notifyChange();
-  return fallbackMeta;
 }
 
 export async function downloadFile(file) {
   try {
     if (file.downloadURL && file.downloadURL.startsWith('http')) {
-      // Download directly from Firebase Storage CDN
-      const res = await fetch(file.downloadURL);
-      const blob = await res.blob();
-      const url = URL.createObjectURL(blob);
       const link = document.createElement('a');
-      link.href = url;
+      link.href = file.downloadURL;
       link.download = file.name || 'download';
+      link.target = '_blank';
+      link.rel = 'noopener noreferrer';
       document.body.appendChild(link);
       link.click();
       document.body.removeChild(link);
-      setTimeout(() => URL.revokeObjectURL(url), 2000);
       return;
     }
 
@@ -667,7 +650,8 @@ export async function downloadFile(file) {
     }
 
     // Try IndexedDB blob
-    const blob = await getFileBlob(file.id);
+    const targetId = file.id || file.fileId;
+    const blob = await getFileBlob(targetId);
     if (blob) {
       const url = URL.createObjectURL(blob);
       const link = document.createElement('a');
@@ -692,21 +676,24 @@ export async function downloadFile(file) {
 }
 
 export async function deleteFile(fileId) {
-  const target = currentFiles.find(f => f.id === fileId);
-  currentFiles = currentFiles.filter(f => f.id !== fileId);
-  persistCache(activeUid);
+  const target = currentFiles.find(f => f.id === fileId || f.fileId === fileId);
+  currentFiles = currentFiles.filter(f => f.id !== fileId && f.fileId !== fileId);
+
+  const uid = activeUid || getCurrentUser()?.uid;
+  persistCache(uid);
   notifyChange();
 
   deleteFileBlob(fileId).catch(() => {});
 
-  if (activeUid && target) {
+  if (uid && target) {
     updateSyncStatus('syncing', 'Deleting file from cloud...');
-    deleteFileFromCloud(activeUid, target)
-      .then(() => updateSyncStatus('synced'))
-      .catch((err) => {
-        console.warn('Failed to delete file from cloud:', err);
-        updateSyncStatus('error', err.message);
-      });
+    try {
+      await deleteFileFromCloud(uid, target);
+      updateSyncStatus('synced');
+    } catch (err) {
+      console.warn('Failed to delete file from cloud:', err);
+      updateSyncStatus('error', err.message);
+    }
   }
 }
 

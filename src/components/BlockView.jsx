@@ -2,16 +2,9 @@ import React, { useState, useRef, useEffect, useMemo } from 'react';
 import { 
   ArrowLeft, 
   ChevronRight, 
-  Loader2, 
-  Box, 
-  CheckCircle2, 
-  Layers, 
-  Paperclip, 
-  Plus, 
   Pencil, 
   Check, 
-  X,
-  Sparkles
+  X
 } from 'lucide-react';
 import TodoItem from './TodoItem';
 import FileTile from './FileTile';
@@ -79,6 +72,8 @@ export default function BlockView({
 
   const [uploadProgress, setUploadProgress] = useState(null);
   const [uploadingFileName, setUploadingFileName] = useState('');
+  const [uploadError, setUploadError] = useState(null);
+  const [lastFailedFile, setLastFailedFile] = useState(null);
   const fileInputRef = useRef(null);
 
   // Breadcrumbs calculation (Home > Root Block > Sub-Block > Child Sub-Block)
@@ -301,6 +296,8 @@ export default function BlockView({
     if (!file) return;
 
     e.target.value = '';
+    setLastFailedFile(file);
+    setUploadError(null);
     setUploadingFileName(file.name);
     setUploadProgress(10);
 
@@ -308,170 +305,90 @@ export default function BlockView({
       await onUploadFile(block.id, file, (progress) => {
         setUploadProgress(progress);
       });
+      setLastFailedFile(null);
+      setUploadError(null);
     } catch (err) {
       console.error('File upload failed:', err);
+      const friendlyMsg = err?.message?.includes('sign in')
+        ? 'Please sign in to upload files and sync across devices'
+        : (err?.message || 'File upload failed. Please try again.');
+      setUploadError(friendlyMsg);
     } finally {
-      setUploadProgress(100);
-      setTimeout(() => {
-        setUploadProgress(null);
-        setUploadingFileName('');
-      }, 450);
+      setUploadProgress(null);
+      setUploadingFileName('');
     }
   };
 
-  const completedCount = todos.filter((t) => t.completed).length;
-  const subBlocksInThisBlock = todos.filter((t) => t.isSubBlock && t.subBlockId);
-  const completionPercentage = todos.length === 0 ? 0 : Math.round((completedCount / todos.length) * 100);
+  const handleRetryUpload = async () => {
+    if (!lastFailedFile) return;
+    const file = lastFailedFile;
+    setUploadError(null);
+    setUploadingFileName(file.name);
+    setUploadProgress(10);
 
-  const isAllDone = todos.length > 0 && completedCount === todos.length;
-  const isPartDone = todos.length > 0 && completedCount > 0 && completedCount < todos.length;
-  const isNothingDone = todos.length > 0 && completedCount === 0;
-
-  const barColor = isAllDone
-    ? 'bg-emerald-400 shadow-[0_0_12px_rgba(52,211,153,0.7)]'
-    : isPartDone
-      ? 'bg-amber-400 shadow-[0_0_12px_rgba(251,191,36,0.7)]'
-      : isNothingDone
-        ? 'bg-rose-500 shadow-[0_0_10px_rgba(244,63,94,0.6)]'
-        : (isLight ? 'bg-black/20' : 'bg-white/20');
+    try {
+      await onUploadFile(block.id, file, (progress) => {
+        setUploadProgress(progress);
+      });
+      setLastFailedFile(null);
+      setUploadError(null);
+    } catch (err) {
+      console.error('File upload retry failed:', err);
+      const friendlyMsg = err?.message?.includes('sign in')
+        ? 'Please sign in to upload files and sync across devices'
+        : (err?.message || 'File upload failed. Please try again.');
+      setUploadError(friendlyMsg);
+    } finally {
+      setUploadProgress(null);
+      setUploadingFileName('');
+    }
+  };
 
   return (
     <>
       {/* ========================================================
-          01 — TOP FLOATING NAVIGATION & BREADCRUMBS BAR
+          01 — TOP NAVIGATION: Home 🏠
           ======================================================== */}
       <div className="fixed top-3.5 left-4 sm:top-5 sm:left-6 z-20 flex items-center gap-2 max-w-[calc(100vw-180px)] overflow-x-auto no-scrollbar py-1">
-        {/* Back Button */}
         <button
           onClick={onBack}
-          title="Go Back (Esc)"
-          aria-label="Back"
-          className={`w-9 h-9 sm:w-10 sm:h-10 rounded-full flex items-center justify-center cursor-pointer transition-all duration-200 active:scale-95 shadow-lg backdrop-blur-xl border flex-shrink-0 ${
+          title="Home (Esc)"
+          aria-label="Home"
+          className={`inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full backdrop-blur-xl border shadow-sm transition-all duration-200 active:scale-95 text-xs font-medium cursor-pointer ${
             isLight
-              ? 'bg-white/70 hover:bg-white/90 border-black/15 text-zinc-900 shadow-sm'
+              ? 'bg-white/70 hover:bg-white/90 border-black/10 text-zinc-900 shadow-sm'
               : 'bg-black/50 hover:bg-black/70 border-white/20 text-white'
           }`}
         >
-          <ArrowLeft className="w-4 h-4 stroke-[2.2]" />
+          <ArrowLeft className="w-3.5 h-3.5 stroke-[2.2]" />
+          <span>Home 🏠</span>
         </button>
-
-        {/* Breadcrumb Trail */}
-        <nav 
-          aria-label="Breadcrumb"
-          className={`hidden sm:flex items-center gap-1.5 px-3 py-1.5 rounded-full backdrop-blur-xl border shadow-lg text-xs font-medium transition-all ${
-            isLight
-              ? 'bg-white/70 border-black/10 text-zinc-700 shadow-sm'
-              : 'bg-black/50 border-white/15 text-white/80'
-          }`}
-        >
-          {breadcrumbs.map((crumb, idx) => {
-            const isLast = idx === breadcrumbs.length - 1;
-            return (
-              <React.Fragment key={crumb.id || 'home'}>
-                {idx > 0 && (
-                  <ChevronRight className="w-3.5 h-3.5 opacity-40 flex-shrink-0" />
-                )}
-                {isLast ? (
-                  <span className={`font-semibold truncate max-w-[150px] ${
-                    isLight ? 'text-zinc-950' : 'text-white'
-                  }`}>
-                    {crumb.name}
-                  </span>
-                ) : (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      if (crumb.id === null) {
-                        onBack();
-                      } else {
-                        onNavigateBlock(crumb.id);
-                      }
-                    }}
-                    className={`hover:underline cursor-pointer truncate max-w-[120px] transition-colors ${
-                      isLight ? 'hover:text-black' : 'hover:text-white'
-                    }`}
-                  >
-                    {crumb.name}
-                  </button>
-                )}
-              </React.Fragment>
-            );
-          })}
-        </nav>
+        {breadcrumbs.length > 2 && (
+          <div className="flex items-center gap-1.5">
+            <span className={`text-xs opacity-40 ${isLight ? 'text-black' : 'text-white'}`}>/</span>
+            <button
+              onClick={() => onNavigateBlock(breadcrumbs[breadcrumbs.length - 2].id)}
+              className={`text-xs font-medium hover:underline max-w-[140px] truncate ${
+                isLight ? 'text-zinc-700' : 'text-white/80'
+              }`}
+            >
+              {breadcrumbs[breadcrumbs.length - 2].name}
+            </button>
+          </div>
+        )}
       </div>
 
       {/* ========================================================
-          02 — MAIN INNER BLOCK CONTAINER
-          Upgraded smoked glass cards, beautiful typography
+          02 — MAIN CONTAINER — calm, minimal spatial workspace
           ======================================================== */}
       <div 
         ref={containerRef}
-        className="w-full max-w-[780px] mx-auto px-4 sm:px-6 pt-20 sm:pt-24 pb-32 animate-page-in select-none"
+        className="w-full max-w-[720px] mx-auto px-4 sm:px-6 pt-20 sm:pt-24 pb-32 animate-page-in select-none"
       >
-        {/* HERO BLOCK HEADER CARD */}
-        <div className={`p-5 sm:p-7 rounded-3xl backdrop-blur-2xl border transition-all duration-300 shadow-2xl mb-8 relative overflow-hidden ${
-          isLight
-            ? 'bg-white/60 border-black/10 shadow-[0_12px_36px_rgba(0,0,0,0.08)]'
-            : 'bg-black/45 border-white/15 shadow-[0_16px_48px_rgba(0,0,0,0.55)]'
-        }`}>
-          {/* Subtle Ambient Background Gradient */}
-          <div className="absolute top-0 right-0 -mr-16 -mt-16 w-64 h-64 rounded-full bg-amber-500/10 blur-3xl pointer-events-none" />
-
-          {/* Top Metadata Badges */}
-          <div className="flex items-center justify-between gap-2 mb-3">
-            <div className="flex items-center gap-2">
-              <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-semibold tracking-wider uppercase border ${
-                nestingLevel > 1
-                  ? isLight
-                    ? 'bg-amber-500/15 text-amber-800 border-amber-500/30'
-                    : 'bg-amber-400/15 text-amber-300 border-amber-400/30'
-                  : isLight
-                    ? 'bg-black/5 text-zinc-800 border-black/10'
-                    : 'bg-white/10 text-white/90 border-white/15'
-              }`}>
-                {nestingLevel > 1 ? (
-                  <>
-                    <Box className="w-3 h-3 stroke-[2.2]" />
-                    <span>Sub-Block • Level {nestingLevel}</span>
-                  </>
-                ) : (
-                  <>
-                    <Layers className="w-3 h-3 stroke-[2.2]" />
-                    <span>Active Block</span>
-                  </>
-                )}
-              </span>
-
-              {subBlocksInThisBlock.length > 0 && (
-                <span className={`hidden sm:inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-medium border ${
-                  isLight
-                    ? 'bg-purple-500/10 text-purple-800 border-purple-500/20'
-                    : 'bg-purple-400/15 text-purple-300 border-purple-400/30'
-                }`}>
-                  <Box className="w-3 h-3" />
-                  <span>{subBlocksInThisBlock.length} Nested</span>
-                </span>
-              )}
-            </div>
-
-            {/* Edit Title Button */}
-            {!isEditingTitle && (
-              <button
-                type="button"
-                onClick={() => setIsEditingTitle(true)}
-                title="Edit Block Name"
-                className={`p-1.5 rounded-lg opacity-70 hover:opacity-100 transition-all cursor-pointer ${
-                  isLight ? 'hover:bg-black/5 text-zinc-700' : 'hover:bg-white/10 text-white/70'
-                }`}
-              >
-                <Pencil className="w-3.5 h-3.5" />
-              </button>
-            )}
-          </div>
-
-          {/* Editable Block Title */}
+        {/* BLOCK NAME — large clean typography */}
+        <div className="group relative mb-8">
           {isEditingTitle ? (
-            <form onSubmit={handleSaveTitle} className="flex items-center gap-2 mb-4">
+            <form onSubmit={handleSaveTitle} className="flex items-center gap-2">
               <input
                 ref={titleInputRef}
                 type="text"
@@ -483,15 +400,17 @@ export default function BlockView({
                     setEditedTitle(block.name || '');
                   }
                 }}
-                className={`flex-1 text-2xl sm:text-3xl font-bold tracking-tight px-3 py-1.5 rounded-xl border focus:outline-none ${
+                className={`flex-1 text-3xl sm:text-4xl font-bold tracking-tight px-3 py-1.5 rounded-xl border focus:outline-none ${
                   isLight
-                    ? 'bg-white/80 border-black/20 text-zinc-950 focus:border-black/40'
-                    : 'bg-black/60 border-white/25 text-white focus:border-white/50'
+                    ? 'bg-white/60 border-black/15 text-zinc-950 focus:border-black/30'
+                    : 'bg-black/40 border-white/20 text-white focus:border-white/40'
                 }`}
               />
               <button
                 type="submit"
-                className={`p-2 rounded-xl text-emerald-400 hover:bg-white/10 transition-colors cursor-pointer`}
+                className={`p-2 rounded-xl transition-colors cursor-pointer ${
+                  isLight ? 'text-emerald-600 hover:bg-black/5' : 'text-emerald-400 hover:bg-white/10'
+                }`}
               >
                 <Check className="w-5 h-5 stroke-[2.5]" />
               </button>
@@ -501,114 +420,52 @@ export default function BlockView({
                   setIsEditingTitle(false);
                   setEditedTitle(block.name || '');
                 }}
-                className={`p-2 rounded-xl text-white/50 hover:bg-white/10 transition-colors cursor-pointer`}
+                className={`p-2 rounded-xl transition-colors cursor-pointer ${
+                  isLight ? 'text-zinc-500 hover:bg-black/5' : 'text-white/50 hover:bg-white/10'
+                }`}
               >
                 <X className="w-5 h-5 stroke-[2.5]" />
               </button>
             </form>
           ) : (
-            <h1 
-              onDoubleClick={() => setIsEditingTitle(true)}
-              className={`text-2xl sm:text-3xl md:text-4xl font-bold tracking-tight leading-tight break-words mb-5 transition-colors cursor-pointer ${
-                isLight ? 'text-zinc-950' : 'text-white'
-              }`}
-            >
-              {block.name}
-            </h1>
+            <div className="flex items-start gap-2">
+              <h1 
+                onDoubleClick={() => setIsEditingTitle(true)}
+                className={`text-3xl sm:text-4xl md:text-5xl font-bold tracking-tight leading-tight break-words cursor-pointer ${
+                  isLight ? 'text-zinc-950' : 'text-white'
+                }`}
+                style={{ textShadow: isLight ? 'none' : '0 2px 14px rgba(0,0,0,0.6)' }}
+              >
+                {block.name}
+              </h1>
+              <button
+                type="button"
+                onClick={() => setIsEditingTitle(true)}
+                title="Edit block name"
+                className={`mt-2 p-1 rounded-lg opacity-0 group-hover:opacity-60 hover:!opacity-100 transition-all cursor-pointer ${
+                  isLight ? 'hover:bg-black/5 text-zinc-700' : 'hover:bg-white/10 text-white/70'
+                }`}
+              >
+                <Pencil className="w-3.5 h-3.5" />
+              </button>
+            </div>
           )}
-
-          {/* Integrated Progress Bar & Stats Console */}
-          <div className="space-y-2.5">
-            <div className="flex items-center justify-between text-xs sm:text-sm font-medium">
-              <div className="flex items-center gap-2">
-                <span className={`inline-flex items-center gap-1 font-mono font-semibold ${
-                  isAllDone
-                    ? 'text-emerald-400'
-                    : isPartDone
-                      ? 'text-amber-400'
-                      : isLight ? 'text-rose-600' : 'text-rose-400'
-                }`}>
-                  <CheckCircle2 className="w-3.5 h-3.5 stroke-[2.2]" />
-                  {completedCount} of {todos.length} Done
-                </span>
-                {todos.length > 0 && (
-                  <span className={`text-[11px] font-mono opacity-60 ${
-                    isLight ? 'text-zinc-700' : 'text-white'
-                  }`}>
-                    • {completionPercentage}%
-                  </span>
-                )}
-              </div>
-
-              <span className={`text-[11px] font-mono tracking-wider uppercase font-semibold ${
-                isAllDone
-                  ? 'text-emerald-400'
-                  : isPartDone
-                    ? 'text-amber-300'
-                    : (isLight ? 'text-zinc-600' : 'text-white/40')
-              }`}>
-                {isAllDone ? '● Completed' : isPartDone ? '● In Progress' : '● Not Started'}
-              </span>
-            </div>
-
-            {/* Glowing Multi-Color Progress Track */}
-            <div className={`w-full h-2 rounded-full overflow-hidden ${
-              isLight ? 'bg-black/10' : 'bg-white/10'
-            }`}>
-              <div
-                className={`h-full rounded-full transition-all duration-300 ${barColor}`}
-                style={{
-                  width: `${
-                    todos.length === 0 
-                      ? 0 
-                      : isNothingDone 
-                        ? 6 
-                        : completionPercentage
-                  }%`
-                }}
-              />
-            </div>
-          </div>
         </div>
 
-        {/* ========================================================
-            03 — TASKS SECTION WITH 3-SECOND LONG PRESS TO SUB-BLOCK
-            ======================================================== */}
-        <div className="mb-10 sm:mb-12">
-          {/* Section Heading & Helper Hint */}
-          <div className="flex items-center justify-between mb-3 px-1">
-            <div className="flex items-center gap-2">
-              <span className={`text-xs font-bold tracking-[0.16em] uppercase ${
-                isLight ? 'text-zinc-800' : 'text-white/80'
-              }`}>
-                TASKS & SUB-BLOCKS
-              </span>
-              <span className={`text-[11px] font-mono px-2 py-0.5 rounded-full ${
-                isLight ? 'bg-black/5 text-zinc-700' : 'bg-white/10 text-white/70'
-              }`}>
-                {todos.length}
-              </span>
-            </div>
-
-            {/* Helpful Feature Hint */}
-            <div className={`hidden sm:flex items-center gap-1.5 text-[11px] font-medium ${
-              isLight ? 'text-amber-800/80' : 'text-amber-300/80'
-            }`}>
-              <Sparkles className="w-3.5 h-3.5 text-amber-400" />
-              <span>Hold any task 3s to turn into a Sub-Block</span>
-            </div>
+        {/* TASKS */}
+        <div className="mb-10">
+          <div className={`text-xs font-semibold tracking-wider uppercase mb-3 ${
+            isLight ? 'text-zinc-600' : 'text-white/50'
+          }`}>
+            Tasks
           </div>
 
-          {/* Loading Tasks State */}
           {loadingTodos && (
-            <div className={`py-4 text-xs tracking-wider px-2 ${isLight ? 'text-zinc-600' : 'text-white/40'}`}>
-              Loading tasks...
-            </div>
+            <p className={`text-xs tracking-wider py-2 ${isLight ? 'text-zinc-500' : 'text-white/40'}`}>Loading...</p>
           )}
 
-          {/* Task Items List */}
           {!loadingTodos && todos.length > 0 && (
-            <div className="flex flex-col gap-2 sm:gap-2.5 mb-3">
+            <div className="flex flex-col gap-1.5 mb-3">
               {todos.map((todo) => {
                 // Calculate nested task count for sub-block badge
                 const subBlockTasks = todo.isSubBlock && todo.subBlockId
@@ -635,33 +492,21 @@ export default function BlockView({
             </div>
           )}
 
-          {/* Empty State */}
           {!loadingTodos && todos.length === 0 && !isAddingTodo && (
-            <div className={`py-8 text-center rounded-2xl border mb-3 backdrop-blur-md ${
-              isLight ? 'bg-white/30 border-black/10' : 'bg-black/20 border-white/10'
-            }`}>
-              <Box className="w-8 h-8 mx-auto mb-2 opacity-30" />
-              <p className={`text-sm font-medium ${isLight ? 'text-zinc-700' : 'text-white/70'}`}>
-                No tasks in this block yet
-              </p>
-              <p className={`text-xs mt-1 ${isLight ? 'text-zinc-500' : 'text-white/40'}`}>
-                Click "Add task" below or press <kbd className="font-mono bg-white/10 px-1 py-0.5 rounded">N</kbd> to get started
-              </p>
-            </div>
+            <p className={`text-sm py-2 mb-2 ${isLight ? 'text-zinc-400' : 'text-white/30'}`}>No tasks yet</p>
           )}
 
-          {/* Inline Add Task Input Card */}
           {isAddingTodo ? (
             <form 
               onSubmit={handleCreateTodo} 
-              className={`flex items-center gap-3 px-4 py-3 rounded-2xl transition-all duration-150 backdrop-blur-xl border shadow-xl ${
+              className={`flex items-center gap-3 px-4 py-3 rounded-xl transition-all border ${
                 isLight
-                  ? 'bg-white/85 border-black/20 shadow-md'
-                  : 'bg-black/60 border-white/25 shadow-2xl'
+                  ? 'bg-white/60 border-black/10'
+                  : 'bg-black/40 border-white/15'
               }`}
             >
-              <div className={`w-5 h-5 rounded-full border border-dashed flex-shrink-0 ${
-                isLight ? 'border-black/40' : 'border-white/40'
+              <div className={`w-4.5 h-4.5 rounded-full border border-dashed flex-shrink-0 ${
+                isLight ? 'border-black/30' : 'border-white/30'
               }`} />
               <input
                 ref={todoInputRef}
@@ -675,7 +520,7 @@ export default function BlockView({
                     setIsAddingTodo(false);
                   }
                 }}
-                placeholder="What needs to be done in this block?"
+                placeholder="What needs to be done?"
                 className={`flex-1 bg-transparent text-[15px] focus:outline-none ${
                   isLight
                     ? 'text-zinc-950 placeholder-zinc-500'
@@ -683,7 +528,7 @@ export default function BlockView({
                 }`}
                 maxLength={140}
               />
-              <div className="flex items-center gap-2 flex-shrink-0">
+              <div className="flex items-center gap-1.5 flex-shrink-0">
                 <button
                   type="button"
                   onClick={() => {
@@ -705,98 +550,80 @@ export default function BlockView({
                       : 'bg-white text-zinc-950 hover:bg-white/90'
                   }`}
                 >
-                  Add Task
+                  Add
                 </button>
               </div>
             </form>
           ) : (
             <button
               onClick={() => setIsAddingTodo(true)}
-              className={`w-full flex items-center justify-center gap-2 text-sm font-medium py-3 px-4 rounded-2xl border border-dashed transition-all duration-200 cursor-pointer select-none group backdrop-blur-md ${
-                isLight
-                  ? 'bg-white/30 hover:bg-white/60 border-black/20 text-zinc-800 hover:border-black/40'
-                  : 'bg-black/20 hover:bg-black/40 border-white/20 text-white/80 hover:border-white/40'
+              className={`text-sm font-medium py-2 px-1 transition-all cursor-pointer ${
+                isLight ? 'text-zinc-500 hover:text-zinc-800' : 'text-white/40 hover:text-white/70'
               }`}
             >
-              <Plus className="w-4 h-4 group-hover:rotate-90 transition-transform duration-200" />
-              <span>{todos.length === 0 ? 'Add your first task' : 'Add task'}</span>
-              <kbd className={`hidden sm:inline-block ml-1 px-1.5 py-0.5 rounded text-[10px] font-mono ${
-                isLight ? 'bg-black/10 text-zinc-800' : 'bg-white/10 text-white/70'
-              }`}>
-                N
-              </kbd>
+              + Add task
             </button>
           )}
         </div>
 
-        {/* ========================================================
-            04 — FILES & ATTACHMENTS SECTION
-            ======================================================== */}
+        {/* FILES */}
         <div>
-          <div className="flex items-center justify-between mb-3 px-1 mt-10 sm:mt-12">
-            <div className="flex items-center gap-2">
-              <span className={`text-xs font-bold tracking-[0.16em] uppercase ${
-                isLight ? 'text-zinc-800' : 'text-white/80'
-              }`}>
-                FILES & ATTACHMENTS
-              </span>
-              <span className={`text-[11px] font-mono px-2 py-0.5 rounded-full ${
-                isLight ? 'bg-black/5 text-zinc-700' : 'bg-white/10 text-white/70'
-              }`}>
-                {files.length}
-              </span>
-            </div>
-
-            <button
-              onClick={() => fileInputRef.current?.click()}
-              disabled={uploadProgress !== null}
-              className={`inline-flex items-center gap-1.5 text-xs font-semibold px-3 py-1 rounded-xl transition-all cursor-pointer active:scale-95 border ${
-                isLight
-                  ? 'bg-white/70 hover:bg-white border-black/10 text-zinc-900 shadow-xs'
-                  : 'bg-white/10 hover:bg-white/20 border-white/20 text-white shadow-xs'
-              }`}
-            >
-              <Plus className="w-3.5 h-3.5" />
-              <span>Upload File</span>
-              <kbd className="hidden sm:inline-block ml-1 text-[10px] font-mono opacity-60">O</kbd>
-            </button>
+          <div className={`text-xs font-semibold tracking-wider uppercase mb-3 ${
+            isLight ? 'text-zinc-600' : 'text-white/50'
+          }`}>
+            Files
           </div>
 
-          {/* Loading Files */}
           {loadingFiles && (
-            <div className={`py-3 text-xs tracking-wider px-1 ${isLight ? 'text-zinc-600' : 'text-white/40'}`}>
-              Loading files...
-            </div>
+            <p className={`text-xs tracking-wider py-2 ${isLight ? 'text-zinc-500' : 'text-white/40'}`}>Loading...</p>
           )}
 
-          {/* Upload Progress Bar */}
+          {/* Upload Progress — simple thin bar */}
           {uploadProgress !== null && (
-            <div className={`mb-3 p-3.5 rounded-2xl border backdrop-blur-xl ${
-              isLight 
-                ? 'bg-white/70 border-black/15 shadow-sm' 
-                : 'bg-black/50 border-white/20'
-            }`}>
-              <div className={`flex items-center justify-between text-xs mb-2 ${
-                isLight ? 'text-zinc-900 font-medium' : 'text-white/90 font-medium'
+            <div className="mb-3 max-w-sm">
+              <div className={`flex items-center justify-between text-xs mb-1 ${
+                isLight ? 'text-zinc-600' : 'text-white/60'
               }`}>
-                <span className="truncate max-w-[260px]">Uploading {uploadingFileName}...</span>
-                <span className="font-mono text-amber-400 font-semibold">{uploadProgress}%</span>
+                <span className="truncate max-w-[240px]">{uploadingFileName}</span>
+                <span className="font-mono text-xs">{uploadProgress}%</span>
               </div>
-              <div className={`w-full h-1.5 rounded-full overflow-hidden ${isLight ? 'bg-black/10' : 'bg-white/15'}`}>
+              <div className={`w-full h-1 rounded-full overflow-hidden ${isLight ? 'bg-black/10' : 'bg-white/10'}`}>
                 <div
-                  className="h-full bg-amber-400 transition-all duration-150 ease-out rounded-full shadow-[0_0_8px_rgba(251,191,36,0.8)]"
+                  className="h-full bg-amber-400 transition-all duration-150 rounded-full"
                   style={{ width: `${uploadProgress}%` }}
                 />
               </div>
             </div>
           )}
 
-          {/* Files Grid */}
+          {/* Clear Upload Error Alert if upload failed */}
+          {uploadError && (
+            <div className="flex items-center justify-between gap-3 px-3.5 py-2 mb-3 rounded-xl bg-rose-500/15 border border-rose-500/30 text-rose-300 text-xs backdrop-blur-md animate-fade-in max-w-md">
+              <span className="truncate">{uploadError}</span>
+              <div className="flex items-center gap-2 flex-shrink-0">
+                {lastFailedFile && (
+                  <button
+                    onClick={handleRetryUpload}
+                    className="font-semibold underline hover:text-white cursor-pointer"
+                  >
+                    Retry
+                  </button>
+                )}
+                <button
+                  onClick={() => setUploadError(null)}
+                  className="opacity-70 hover:opacity-100 cursor-pointer"
+                >
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              </div>
+            </div>
+          )}
+
           {!loadingFiles && files.length > 0 && (
-            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-2.5 sm:gap-3 mb-3">
+            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2.5 mb-3">
               {files.map((file) => (
                 <FileTile
-                  key={file.id}
+                  key={file.id || file.fileId}
                   file={file}
                   onOpenViewer={(f) => setViewingFile(f)}
                   onDownload={onDownloadFile}
@@ -807,22 +634,22 @@ export default function BlockView({
             </div>
           )}
 
-          {/* Empty State */}
-          {!loadingFiles && files.length === 0 && uploadProgress === null && (
-            <div className={`py-6 text-center rounded-2xl border mb-2 backdrop-blur-md ${
-              isLight ? 'bg-white/30 border-black/10' : 'bg-black/20 border-white/10'
-            }`}>
-              <Paperclip className="w-6 h-6 mx-auto mb-1.5 opacity-30" />
-              <p className={`text-xs ${isLight ? 'text-zinc-600' : 'text-white/50'}`}>
-                No files uploaded to this block
-              </p>
-            </div>
-          )}
+          {/* Add file trigger — minimal text */}
+          <button
+            onClick={() => fileInputRef.current?.click()}
+            disabled={uploadProgress !== null}
+            className={`text-sm font-medium py-2 px-1 transition-all cursor-pointer ${
+              isLight ? 'text-zinc-500 hover:text-zinc-800' : 'text-white/40 hover:text-white/70'
+            }`}
+          >
+            + Add file
+          </button>
 
-          {/* Hidden Native File Input */}
+          {/* Hidden Native File Input supporting all file types */}
           <input
             ref={fileInputRef}
             type="file"
+            accept="*/*"
             onChange={handleFileChange}
             className="hidden"
           />

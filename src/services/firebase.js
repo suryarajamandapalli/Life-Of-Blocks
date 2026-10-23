@@ -410,75 +410,84 @@ export async function setRTDBSetting(uid, key, value) {
 // ========================================================
 // FIREBASE CLOUD STORAGE (Uploaded Files Single Source of Truth)
 // Bucket: life-of-blocks.firebasestorage.app
+// Path: users/{uid}/blocks/{blockId}/files/{fileId}_{safeName}
 // ========================================================
 
-export async function uploadFileToCloud(uid, blockId, file, onProgress) {
+export async function uploadFileToCloud(uid, blockId, file, onProgress, customFileId) {
   if (!uid || !blockId || !file) {
     throw new Error('Missing upload parameters: uid, blockId, file');
   }
 
-  const fileId = 'file_' + Date.now() + '_' + Math.random().toString(36).substring(2, 7);
-  const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, '_');
+  const fileId = customFileId || ('file_' + Date.now() + '_' + Math.random().toString(36).substring(2, 8));
+  const safeName = (file.name || 'file').replace(/[^a-zA-Z0-9._-]/g, '_');
   const storagePath = `users/${uid}/blocks/${blockId}/files/${fileId}_${safeName}`;
   let downloadURL = null;
 
-  if (onProgress) onProgress(15);
+  if (onProgress) onProgress(10);
 
-  if (storage) {
-    try {
-      const fileStorageRef = storageRef(storage, storagePath);
-      const uploadTask = uploadBytesResumable(fileStorageRef, file, {
-        contentType: file.type || 'application/octet-stream'
-      });
-
-      downloadURL = await new Promise((resolve, reject) => {
-        uploadTask.on(
-          'state_changed',
-          (snapshot) => {
-            if (snapshot.totalBytes > 0) {
-              const pct = Math.round((snapshot.bytesTransferred / snapshot.totalBytes) * 100);
-              if (onProgress) onProgress(pct);
-            }
-          },
-          (error) => reject(error),
-          async () => {
-            try {
-              const url = await getDownloadURL(uploadTask.snapshot.ref);
-              resolve(url);
-            } catch (urlErr) {
-              reject(urlErr);
-            }
-          }
-        );
-      });
-    } catch (storageErr) {
-      console.warn('Firebase Storage upload failed, falling back to data URL for small file:', storageErr);
-    }
+  if (!storage) {
+    throw new Error('Firebase Storage service is not initialized');
   }
 
-  // Graceful fallback for small files (<= 3MB) if storage bucket is offline
-  if (!downloadURL && file.size <= 3 * 1024 * 1024) {
-    try {
-      downloadURL = await new Promise((resolve) => {
-        const reader = new FileReader();
-        reader.onload = () => resolve(reader.result);
-        reader.onerror = () => resolve('');
-        reader.readAsDataURL(file);
-      });
-    } catch {}
+  try {
+    const fileStorageRef = storageRef(storage, storagePath);
+    const uploadTask = uploadBytesResumable(fileStorageRef, file, {
+      contentType: file.type || 'application/octet-stream',
+      customMetadata: {
+        userId: uid,
+        blockId: blockId,
+        fileId: fileId,
+        originalName: file.name
+      }
+    });
+
+    downloadURL = await new Promise((resolve, reject) => {
+      uploadTask.on(
+        'state_changed',
+        (snapshot) => {
+          if (snapshot.totalBytes > 0 && onProgress) {
+            const pct = Math.round((snapshot.bytesTransferred / snapshot.totalBytes) * 100);
+            onProgress(pct);
+          }
+        },
+        (error) => {
+          console.error('[Firebase Storage Upload Error]:', error);
+          reject(error);
+        },
+        async () => {
+          try {
+            const url = await getDownloadURL(uploadTask.snapshot.ref);
+            resolve(url);
+          } catch (urlErr) {
+            reject(urlErr);
+          }
+        }
+      );
+    });
+  } catch (storageErr) {
+    console.error('Firebase Storage upload failed:', storageErr);
+    throw storageErr;
+  }
+
+  if (!downloadURL) {
+    throw new Error('Failed to retrieve cloud download URL from storage');
   }
 
   if (onProgress) onProgress(100);
 
   // Metadata saved directly into RTDB
+  // Stores fileId, userId, blockId, name, type, size, storagePath, downloadURL, createdAt
   const fileMeta = {
+    fileId,
     id: fileId,
+    userId: uid,
     blockId,
     name: file.name,
-    size: file.size,
+    type: file.type || 'application/octet-stream',
     mimeType: file.type || 'application/octet-stream',
+    size: file.size,
     storagePath,
-    downloadURL: downloadURL || '',
+    downloadURL,
     createdAt: Date.now(),
     updatedAt: Date.now()
   };
@@ -493,6 +502,8 @@ export async function uploadFileToCloud(uid, blockId, file, onProgress) {
 export async function deleteFileFromCloud(uid, file) {
   if (!uid || !file) return;
 
+  const targetId = file.id || file.fileId;
+
   // 1. Delete actual binary file from Firebase Storage
   if (file.storagePath && storage) {
     try {
@@ -504,7 +515,7 @@ export async function deleteFileFromCloud(uid, file) {
   }
 
   // 2. Delete file metadata from RTDB
-  if (rtdb) {
-    await removeRTDBFile(uid, file.id);
+  if (rtdb && targetId) {
+    await removeRTDBFile(uid, targetId);
   }
 }

@@ -37,18 +37,19 @@ export default function FileTile({
   useEffect(() => {
     let active = true;
     let url = null;
+    const fileId = file.id || file.fileId;
 
     if (file.downloadURL && (isImage || isVideo)) {
       setThumbUrl(file.downloadURL);
     } else if (isImage || isVideo) {
-      getFileObjectUrl(file.id).then((resUrl) => {
+      getFileObjectUrl(fileId).then((resUrl) => {
         if (active && resUrl) {
           url = resUrl;
           setThumbUrl(resUrl);
         }
       });
     } else if (isText) {
-      getFileContent(file.id, 'text').then((content) => {
+      getFileContent(fileId, 'text').then((content) => {
         if (active && content) {
           setTextSnippet(content.slice(0, 160));
         }
@@ -59,7 +60,7 @@ export default function FileTile({
       active = false;
       if (url) URL.revokeObjectURL(url);
     };
-  }, [file.id, isImage, isVideo, isText]);
+  }, [file.id, file.fileId, file.downloadURL, isImage, isVideo, isText]);
 
   // Render purely the visual representation without ugly permanent text labels
   const renderVisualContent = () => {
