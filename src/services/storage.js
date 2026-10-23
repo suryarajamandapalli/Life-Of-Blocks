@@ -373,11 +373,13 @@ export function getBlocks() {
   return [...currentBlocks];
 }
 
-export function createBlock(name) {
+export function createBlock(name, parentBlockId = null, sourceTodoId = null) {
   const newId = 'block_' + Date.now() + '_' + Math.random().toString(36).substring(2, 7);
   const newBlock = {
     id: newId,
     name: name.trim(),
+    parentBlockId: parentBlockId || null,
+    sourceTodoId: sourceTodoId || null,
     createdAt: Date.now(),
     updatedAt: Date.now()
   };
@@ -405,26 +407,95 @@ export function createBlock(name) {
   return newBlock.id;
 }
 
-export async function deleteBlock(blockId) {
-  if (!blockId) return;
+export function updateBlock(blockId, updates) {
+  let updatedBlock = null;
+  currentBlocks = currentBlocks.map(b => {
+    if (b.id === blockId) {
+      updatedBlock = { ...b, ...updates, updatedAt: Date.now() };
+      return updatedBlock;
+    }
+    return b;
+  });
 
-  // 1. Optimistic Local Update
-  currentBlocks = currentBlocks.filter(b => b.id !== blockId);
-  currentTodos = currentTodos.filter(t => t.blockId !== blockId);
-  currentFiles = currentFiles.filter(f => f.blockId !== blockId);
   persistCache(activeUid);
   notifyChange();
 
-  // 2. Realtime RTDB Delete
-  if (activeUid) {
-    updateSyncStatus('syncing', 'Deleting block from cloud...');
-    removeRTDBBlock(activeUid, blockId)
+  if (activeUid && updatedBlock) {
+    setRTDBBlock(activeUid, updatedBlock)
       .then(() => updateSyncStatus('synced'))
       .catch((err) => {
-        console.warn('Failed to delete block from RTDB:', err);
-        updateSyncStatus('error', err.message);
+        console.warn('Failed to update block in RTDB:', err);
       });
   }
+}
+
+export async function deleteBlock(blockId) {
+  if (!blockId) return;
+
+  // Collect this block and all nested descendant sub-blocks recursively
+  const blocksToDelete = [blockId];
+  const collectDescendants = (pid) => {
+    const kids = currentBlocks.filter(b => b.parentBlockId === pid);
+    for (const kid of kids) {
+      if (!blocksToDelete.includes(kid.id)) {
+        blocksToDelete.push(kid.id);
+        collectDescendants(kid.id);
+      }
+    }
+  };
+  collectDescendants(blockId);
+
+  // If this block was created from a task, unmark that parent task
+  const targetBlock = currentBlocks.find(b => b.id === blockId);
+  if (targetBlock?.sourceTodoId) {
+    const srcTodo = currentTodos.find(t => t.id === targetBlock.sourceTodoId);
+    if (srcTodo) {
+      updateTodo(srcTodo.id, { isSubBlock: false, subBlockId: null });
+    }
+  }
+
+  // 1. Optimistic Local Update
+  currentBlocks = currentBlocks.filter(b => !blocksToDelete.includes(b.id));
+  currentTodos = currentTodos.filter(t => !blocksToDelete.includes(t.blockId));
+  currentFiles = currentFiles.filter(f => !blocksToDelete.includes(f.blockId));
+  persistCache(activeUid);
+  notifyChange();
+
+  // 2. Realtime RTDB Delete for all collected blocks
+  if (activeUid) {
+    updateSyncStatus('syncing', 'Deleting block from cloud...');
+    try {
+      for (const id of blocksToDelete) {
+        await removeRTDBBlock(activeUid, id).catch(() => {});
+      }
+      updateSyncStatus('synced');
+    } catch (err) {
+      console.warn('Failed to delete blocks from RTDB:', err);
+      updateSyncStatus('error', err.message);
+    }
+  }
+}
+
+// Convert an individual task into a full nested Sub-Block
+export function convertTodoToSubBlock(parentBlockId, todo) {
+  if (!todo) return null;
+
+  // If already a sub-block, verify existing subBlockId
+  if (todo.isSubBlock && todo.subBlockId) {
+    const existing = currentBlocks.find(b => b.id === todo.subBlockId);
+    if (existing) return existing.id;
+  }
+
+  // Create new child block with task title and parent reference
+  const newBlockId = createBlock(todo.title || 'Untitled Sub-Block', parentBlockId, todo.id);
+
+  // Update todo to point to this sub-block
+  updateTodo(todo.id, {
+    isSubBlock: true,
+    subBlockId: newBlockId
+  });
+
+  return newBlockId;
 }
 
 // ----------------- CRUD API: TODOS -----------------
@@ -443,6 +514,8 @@ export function addTodo(blockId, title) {
     blockId,
     title: title.trim(),
     completed: false,
+    isSubBlock: false,
+    subBlockId: null,
     createdAt: Date.now(),
     updatedAt: Date.now()
   };
@@ -477,7 +550,12 @@ export function updateTodo(todoId, updates) {
   persistCache(activeUid);
   notifyChange();
 
-  // Realtime RTDB Update (using atomic update on specific fields)
+  // If title was updated and it's a sub-block, also sync the sub-block's name
+  if (updates.title && updatedTodo?.isSubBlock && updatedTodo?.subBlockId) {
+    updateBlock(updatedTodo.subBlockId, { name: updates.title });
+  }
+
+  // Realtime RTDB Update
   if (activeUid && updatedTodo) {
     updateSyncStatus('syncing', 'Updating task...');
     updateRTDBTodo(activeUid, todoId, updates)
@@ -490,6 +568,12 @@ export function updateTodo(todoId, updates) {
 }
 
 export function deleteTodo(todoId) {
+  const todo = currentTodos.find(t => t.id === todoId);
+  // If the task was a sub-block, also clean up the nested child block
+  if (todo?.isSubBlock && todo?.subBlockId) {
+    deleteBlock(todo.subBlockId).catch(() => {});
+  }
+
   currentTodos = currentTodos.filter(t => t.id !== todoId);
   persistCache(activeUid);
   notifyChange();

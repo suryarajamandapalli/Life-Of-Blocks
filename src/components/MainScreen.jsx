@@ -1,11 +1,11 @@
 import React, { useRef } from 'react';
-import { Plus, Trash2 } from 'lucide-react';
+import { Plus, Trash2, Box } from 'lucide-react';
 import { useAdaptiveContrast } from '../hooks/useAdaptiveContrast';
 
 export default function MainScreen({
-  blocks,
-  todos,
-  loading,
+  blocks = [],
+  todos = [],
+  loading = false,
   wallpaper,
   onOpenBlock,
   onOpenCreateModal,
@@ -14,6 +14,9 @@ export default function MainScreen({
   const containerRef = useRef(null);
   const contrast = useAdaptiveContrast(containerRef, wallpaper);
   const isLight = contrast.isLight;
+
+  // Only display root blocks on the main dashboard (sub-blocks live inside their parent blocks)
+  const rootBlocks = blocks.filter((b) => !b.parentBlockId);
 
   return (
     <div 
@@ -32,13 +35,16 @@ export default function MainScreen({
       </h1>
 
       {/* When blocks exist: display the user's blocks */}
-      {!loading && blocks.length > 0 && (
+      {!loading && rootBlocks.length > 0 && (
         <div className="w-full grid grid-cols-1 sm:grid-cols-2 gap-3.5 sm:gap-4 my-10 sm:my-14">
-          {blocks.map((block) => {
+          {rootBlocks.map((block) => {
             const blockTodos = todos.filter(t => t.blockId === block.id);
             const total = blockTodos.length;
             const completed = blockTodos.filter(t => t.completed).length;
             const percent = total === 0 ? 0 : Math.round((completed / total) * 100);
+
+            // Nested sub-blocks inside this block
+            const subBlocksCount = blocks.filter(b => b.parentBlockId === block.id).length;
 
             const isAllDone = total > 0 && completed === total;
             const isPartDone = total > 0 && completed > 0 && completed < total;
@@ -72,13 +78,25 @@ export default function MainScreen({
               >
                 {/* Block Info */}
                 <div className="min-w-0 flex-1 pr-3">
-                  <h3 
-                    className={`text-base sm:text-lg font-semibold tracking-wide truncate mb-1 transition-colors ${
-                      isLight ? 'text-zinc-950' : 'text-white'
-                    }`}
-                  >
-                    {block.name}
-                  </h3>
+                  <div className="flex items-center gap-2 mb-1">
+                    <h3 
+                      className={`text-base sm:text-lg font-semibold tracking-wide truncate transition-colors ${
+                        isLight ? 'text-zinc-950' : 'text-white'
+                      }`}
+                    >
+                      {block.name}
+                    </h3>
+                    {subBlocksCount > 0 && (
+                      <span className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-semibold border flex-shrink-0 ${
+                        isLight
+                          ? 'bg-amber-500/15 text-amber-800 border-amber-500/30'
+                          : 'bg-amber-400/15 text-amber-300 border-amber-400/30'
+                      }`}>
+                        <Box className="w-2.5 h-2.5" />
+                        <span>{subBlocksCount}</span>
+                      </span>
+                    )}
+                  </div>
 
                   {/* Progress bar with color code and #/# at the end */}
                   <div className="flex items-center gap-2.5 mt-2">
@@ -126,7 +144,7 @@ export default function MainScreen({
       )}
 
       {/* Single + Button */}
-      <div className={`${blocks.length > 0 ? 'mt-2 mb-8' : 'mt-14 sm:mt-20'}`}>
+      <div className={`${rootBlocks.length > 0 ? 'mt-2 mb-8' : 'mt-14 sm:mt-20'}`}>
         <button
           onClick={onOpenCreateModal}
           title="Create Block (+)"

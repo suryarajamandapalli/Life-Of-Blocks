@@ -2,7 +2,9 @@ import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { 
   getBlocks, 
   createBlock, 
+  updateBlock,
   deleteBlock, 
+  convertTodoToSubBlock,
   getTodos, 
   addTodo, 
   updateTodo, 
@@ -314,7 +316,12 @@ export default function App() {
           return;
         }
         if (currentBlockId) {
-          setCurrentBlockId(null);
+          const curr = blocks.find(b => b.id === currentBlockId);
+          if (curr?.parentBlockId) {
+            setCurrentBlockId(curr.parentBlockId);
+          } else {
+            setCurrentBlockId(null);
+          }
           return;
         }
       }
@@ -375,11 +382,32 @@ export default function App() {
     }
   };
 
+  const handleConvertToSubBlock = (parentBlockId, todo) => {
+    const subBlockId = convertTodoToSubBlock(parentBlockId, todo);
+    if (subBlockId) {
+      setCurrentBlockId(subBlockId);
+    }
+  };
+
+  const handleUpdateBlock = (blockId, updates) => {
+    updateBlock(blockId, updates);
+  };
+
+  const handleBackFromBlock = () => {
+    const curr = blocks.find(b => b.id === currentBlockId);
+    if (curr?.parentBlockId) {
+      setCurrentBlockId(curr.parentBlockId);
+    } else {
+      setCurrentBlockId(null);
+    }
+  };
+
   const handleDeleteBlockConfirm = async () => {
     if (!deletingBlock) return;
+    const parentId = deletingBlock.parentBlockId;
     await deleteBlock(deletingBlock.id);
     if (currentBlockId === deletingBlock.id) {
-      setCurrentBlockId(null);
+      setCurrentBlockId(parentId || null);
     }
     setDeletingBlock(null);
   };
@@ -459,16 +487,21 @@ export default function App() {
         {currentBlockId && activeBlock ? (
           <BlockView
             block={activeBlock}
+            allBlocks={blocks}
+            allTodos={todos}
             todos={activeTodos}
             files={files}
             loadingTodos={false}
             loadingFiles={false}
             wallpaper={wallpaper}
-            onBack={() => setCurrentBlockId(null)}
+            onBack={handleBackFromBlock}
+            onNavigateBlock={(blockId) => setCurrentBlockId(blockId)}
+            onUpdateBlock={handleUpdateBlock}
             onAddTodo={handleAddTodo}
             onToggleTodo={handleToggleTodo}
             onUpdateTodo={handleUpdateTodo}
             onDeleteTodo={handleDeleteTodo}
+            onConvertToSubBlock={handleConvertToSubBlock}
             onUploadFile={handleUploadFile}
             onDownloadFile={handleDownloadFile}
             onDeleteFile={handleDeleteFile}

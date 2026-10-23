@@ -257,7 +257,8 @@ export function subscribeRTDBBlocks(uid, onData, onError) {
 export async function setRTDBBlock(uid, block) {
   if (!rtdb || !uid || !block?.id) return;
   const blockRef = ref(rtdb, `users/${uid}/blocks/${block.id}`);
-  return set(blockRef, block);
+  const clean = Object.fromEntries(Object.entries(block).filter(([_, v]) => v !== undefined));
+  return set(blockRef, clean);
 }
 
 export async function removeRTDBBlock(uid, blockId) {
@@ -329,13 +330,15 @@ export function subscribeRTDBTodos(uid, onData, onError) {
 export async function setRTDBTodo(uid, todo) {
   if (!rtdb || !uid || !todo?.id) return;
   const todoRef = ref(rtdb, `users/${uid}/todos/${todo.id}`);
-  return set(todoRef, todo);
+  const clean = Object.fromEntries(Object.entries(todo).filter(([_, v]) => v !== undefined));
+  return set(todoRef, clean);
 }
 
 export async function updateRTDBTodo(uid, todoId, updates) {
   if (!rtdb || !uid || !todoId) return;
   const todoRef = ref(rtdb, `users/${uid}/todos/${todoId}`);
-  return update(todoRef, { ...updates, updatedAt: Date.now() });
+  const clean = Object.fromEntries(Object.entries(updates).filter(([_, v]) => v !== undefined));
+  return update(todoRef, { ...clean, updatedAt: Date.now() });
 }
 
 export async function removeRTDBTodo(uid, todoId) {

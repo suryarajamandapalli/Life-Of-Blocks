@@ -158,6 +158,34 @@ class SoundController {
     } catch {}
   }
 
+  // Satisfying futuristic chime when a task transforms into a nested Sub-Block
+  playBlockTransform() {
+    try {
+      this.init();
+      if (!this.ctx) return;
+      const now = this.ctx.currentTime;
+      const freqs = [440, 554.37, 659.25, 880, 1108.73]; // A major 7th ascension
+
+      freqs.forEach((freq, idx) => {
+        const osc = this.ctx.createOscillator();
+        const gain = this.ctx.createGain();
+
+        osc.type = idx === freqs.length - 1 ? 'sine' : 'triangle';
+        osc.frequency.setValueAtTime(freq, now + idx * 0.08);
+
+        gain.gain.setValueAtTime(0, now + idx * 0.08);
+        gain.gain.linearRampToValueAtTime(0.18, now + idx * 0.08 + 0.03);
+        gain.gain.exponentialRampToValueAtTime(0.0001, now + idx * 0.08 + 0.9);
+
+        osc.connect(gain);
+        gain.connect(this.ctx.destination);
+
+        osc.start(now + idx * 0.08);
+        osc.stop(now + idx * 0.08 + 1.0);
+      });
+    } catch {}
+  }
+
   // Ambient sound generator: 'rain', 'space', 'waves'
   startAmbient(type = 'rain') {
     try {

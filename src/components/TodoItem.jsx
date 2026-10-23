@@ -1,25 +1,38 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useCallback } from 'react';
 import CircularCheckbox from './CircularCheckbox';
-import { Pencil, Trash2, Check, X } from 'lucide-react';
+import { Pencil, Trash2, Check, X, Box, ChevronRight, Sparkles } from 'lucide-react';
 import { useAdaptiveContrast } from '../hooks/useAdaptiveContrast';
+import { sound } from '../services/sound';
+
+const LONG_PRESS_DURATION = 3000; // 3 seconds to convert to Sub-Block
 
 export default function TodoItem({
   todo,
   wallpaper,
   isSelected,
   deleteProgress = 0,
+  subBlockTaskCount = 0,
   onSelect,
   onToggle,
   onUpdate,
-  onDelete
+  onDelete,
+  onConvertToBlock,
+  onOpenSubBlock
 }) {
   const rowRef = useRef(null);
-  // Each task independently samples the exact wallpaper pixels behind itself
   const rowContrast = useAdaptiveContrast(rowRef, wallpaper);
+  const isLight = rowContrast.isLight;
 
   const [isEditing, setIsEditing] = useState(false);
   const [editText, setEditText] = useState(todo.title || '');
   const editInputRef = useRef(null);
+
+  // 3-Second Long Press to Convert into Block state
+  const [holdProgress, setHoldProgress] = useState(0);
+  const [isHolding, setIsHolding] = useState(false);
+  const holdStartRef = useRef(0);
+  const holdFrameRef = useRef(null);
+  const touchStartPosRef = useRef({ x: 0, y: 0 });
 
   useEffect(() => {
     setEditText(todo.title || '');
@@ -32,8 +45,87 @@ export default function TodoItem({
     }
   }, [isEditing]);
 
+  // Clean up animation frames on unmount
+  useEffect(() => {
+    return () => {
+      if (holdFrameRef.current) cancelAnimationFrame(holdFrameRef.current);
+    };
+  }, []);
+
+  // ----------------- LONG PRESS LOGIC (3s Hold) -----------------
+  const cancelHold = useCallback(() => {
+    if (holdFrameRef.current) {
+      cancelAnimationFrame(holdFrameRef.current);
+      holdFrameRef.current = null;
+    }
+    holdStartRef.current = 0;
+    setIsHolding(false);
+    setHoldProgress(0);
+  }, []);
+
+  const triggerConversion = useCallback(() => {
+    cancelHold();
+    // Sound & Haptic Feedback
+    sound.playBlockTransform();
+    if (typeof navigator !== 'undefined' && navigator.vibrate) {
+      navigator.vibrate([40, 60, 80]);
+    }
+    onConvertToBlock?.(todo);
+  }, [cancelHold, onConvertToBlock, todo]);
+
+  const startHold = useCallback((e) => {
+    // Ignore right click or when editing or when already holding
+    if (e.button && e.button !== 0) return;
+    if (isEditing) return;
+
+    // Record start time
+    holdStartRef.current = Date.now();
+    setIsHolding(true);
+    setHoldProgress(0.01);
+
+    const step = () => {
+      if (!holdStartRef.current) return;
+      const elapsed = Date.now() - holdStartRef.current;
+      const progress = Math.min(1, elapsed / LONG_PRESS_DURATION);
+      setHoldProgress(progress);
+
+      if (progress < 1) {
+        holdFrameRef.current = requestAnimationFrame(step);
+      } else {
+        // Hold Completed (3 seconds achieved!)
+        triggerConversion();
+      }
+    };
+
+    holdFrameRef.current = requestAnimationFrame(step);
+  }, [isEditing, triggerConversion]);
+
+  // Touch event handlers for mobile
+  const handleTouchStart = (e) => {
+    const touch = e.touches[0];
+    if (touch) {
+      touchStartPosRef.current = { x: touch.clientX, y: touch.clientY };
+    }
+    startHold(e);
+  };
+
+  const handleTouchMove = (e) => {
+    if (!holdStartRef.current) return;
+    const touch = e.touches[0];
+    if (touch) {
+      const dx = Math.abs(touch.clientX - touchStartPosRef.current.x);
+      const dy = Math.abs(touch.clientY - touchStartPosRef.current.y);
+      // Cancel if user scrolls or moves finger more than 10px
+      if (dx > 10 || dy > 10) {
+        cancelHold();
+      }
+    }
+  };
+
+  // Editing Handlers
   const handleStartEdit = (e) => {
     e?.stopPropagation();
+    cancelHold();
     setEditText(todo.title || '');
     setIsEditing(true);
   };
@@ -54,32 +146,67 @@ export default function TodoItem({
     setIsEditing(false);
   };
 
+  const isSubBlock = Boolean(todo.isSubBlock && todo.subBlockId);
+
   return (
     <div
       ref={rowRef}
-      onClick={() => onSelect?.(todo)}
+      onClick={() => {
+        onSelect?.(todo);
+        if (isSubBlock && !isEditing) {
+          onOpenSubBlock?.(todo.subBlockId);
+        }
+      }}
       onMouseEnter={() => onSelect?.(todo)}
+      onMouseDown={startHold}
+      onMouseUp={cancelHold}
+      onMouseLeave={cancelHold}
+      onTouchStart={handleTouchStart}
+      onTouchEnd={cancelHold}
+      onTouchMove={handleTouchMove}
+      onTouchCancel={cancelHold}
       tabIndex={0}
       role="checkbox"
       aria-checked={Boolean(todo.completed)}
-      className={`group relative flex items-center gap-3 px-1.5 py-2 sm:py-2 select-none outline-none transition-colors duration-250 ease-out ${
-        todo.completed && !isEditing ? 'opacity-55' : 'opacity-100'
-      }`}
+      className={`group relative flex items-center gap-3 px-3.5 sm:px-4 py-3 sm:py-3.5 rounded-2xl select-none outline-none transition-all duration-200 overflow-hidden cursor-pointer ${
+        isLight
+          ? isSubBlock
+            ? 'bg-amber-500/10 hover:bg-amber-500/15 border border-amber-500/30 shadow-md backdrop-blur-md'
+            : 'bg-white/50 hover:bg-white/70 border border-black/10 hover:border-black/20 shadow-sm backdrop-blur-md'
+          : isSubBlock
+            ? 'bg-amber-950/20 hover:bg-amber-900/30 border border-amber-400/30 shadow-lg backdrop-blur-md'
+            : 'bg-black/35 hover:bg-black/50 border border-white/10 hover:border-white/20 shadow-md backdrop-blur-md'
+      } ${todo.completed && !isEditing ? 'opacity-65' : 'opacity-100'}`}
     >
+      {/* 3-Second Hold-to-Convert Energy Fill Bar */}
+      {holdProgress > 0 && (
+        <div 
+          className="absolute inset-0 bg-gradient-to-r from-amber-500/25 via-yellow-400/30 to-amber-500/35 pointer-events-none transition-all duration-75 z-0 border-b-2 border-amber-400"
+          style={{ width: `${Math.round(holdProgress * 100)}%` }}
+        />
+      )}
+
       {/* Desktop hold-Del delete bar indicator */}
       {deleteProgress > 0 && (
         <div 
-          className="absolute inset-y-0 left-0 bg-rose-500/25 pointer-events-none transition-all duration-75 z-0 border-r border-rose-500/50 rounded-sm"
+          className="absolute inset-y-0 left-0 bg-rose-500/30 pointer-events-none transition-all duration-75 z-0 border-r-2 border-rose-500"
           style={{ width: `${Math.min(100, deleteProgress * 100)}%` }}
         />
       )}
 
       {/* Checkbox: Independently adapts to local contrast */}
-      <div className="relative flex items-center justify-center flex-shrink-0 z-10">
+      <div 
+        className="relative flex items-center justify-center flex-shrink-0 z-10"
+        onClick={(e) => {
+          e.stopPropagation();
+          cancelHold();
+          onToggle?.(todo);
+        }}
+      >
         <CircularCheckbox
           checked={Boolean(todo.completed)}
           onChange={() => onToggle?.(todo)}
-          isLightMode={rowContrast.isLight}
+          isLightMode={isLight}
         />
       </div>
 
@@ -102,17 +229,17 @@ export default function TodoItem({
               }
             }}
             maxLength={140}
-            className={`w-full px-2.5 py-1 rounded-lg text-[14.5px] sm:text-[15px] focus:outline-none transition-colors duration-250 border ${
-              rowContrast.isLight 
-                ? 'bg-white/75 border-black/25 text-[#111111] placeholder-zinc-500 focus:border-black/50 shadow-xs' 
-                : 'bg-black/45 border-white/25 text-white placeholder-white/40 focus:border-white/50 shadow-xs'
+            className={`w-full px-3 py-1.5 rounded-xl text-[14.5px] sm:text-[15px] focus:outline-none transition-all border ${
+              isLight 
+                ? 'bg-white/90 border-black/25 text-[#111111] placeholder-zinc-500 focus:border-black/50 shadow-sm' 
+                : 'bg-black/60 border-white/25 text-white placeholder-white/40 focus:border-white/50 shadow-sm'
             }`}
           />
           <button
             type="submit"
             title="Save"
             className={`p-1.5 rounded-lg cursor-pointer transition-colors ${
-              rowContrast.isLight 
+              isLight 
                 ? 'text-emerald-700 hover:bg-black/5 active:bg-black/10' 
                 : 'text-emerald-400 hover:bg-white/10 active:bg-white/15'
             }`}
@@ -124,7 +251,7 @@ export default function TodoItem({
             onClick={handleCancelEdit}
             title="Cancel"
             className={`p-1.5 rounded-lg cursor-pointer transition-colors ${
-              rowContrast.isLight 
+              isLight 
                 ? 'text-[#111111]/60 hover:bg-black/5 active:bg-black/10' 
                 : 'text-white/50 hover:bg-white/10 active:bg-white/15'
             }`}
@@ -134,52 +261,119 @@ export default function TodoItem({
         </form>
       ) : (
         <>
-          {/* Todo Title: Direct floating text printed onto wallpaper */}
-          <span
-            onClick={() => onToggle?.(todo)}
-            onDoubleClick={handleStartEdit}
-            className={`flex-1 text-[15px] sm:text-[15.5px] leading-snug tracking-wide transition-colors duration-250 ease-out break-words z-10 cursor-pointer ${
-              todo.completed
-                ? (rowContrast.isLight
-                    ? 'line-through text-[#111111]/45 font-normal'
-                    : 'line-through text-[#FFFFFF]/45 font-normal')
-                : (rowContrast.isLight
-                    ? `text-[#111111] font-medium ${rowContrast.textShadow}`
-                    : `text-[#FFFFFF] font-normal ${rowContrast.textShadow}`)
-            }`}
-          >
-            {todo.title}
-          </span>
+          {/* Main Content Area */}
+          <div className="flex-1 min-w-0 flex items-center gap-2 z-10">
+            {/* Task Title */}
+            <span
+              onClick={(e) => {
+                if (!isSubBlock) {
+                  e.stopPropagation();
+                  onToggle?.(todo);
+                }
+              }}
+              onDoubleClick={handleStartEdit}
+              className={`text-[14.5px] sm:text-[15.5px] leading-snug tracking-wide transition-colors duration-200 truncate ${
+                todo.completed
+                  ? isLight
+                    ? 'line-through text-zinc-500 font-normal'
+                    : 'line-through text-white/45 font-normal'
+                  : isLight
+                    ? 'text-zinc-900 font-medium'
+                    : 'text-white font-medium'
+              }`}
+            >
+              {todo.title}
+            </span>
 
-          {/* Action Icons: Edit & Delete */}
+            {/* Sub-Block Badge if converted */}
+            {isSubBlock && (
+              <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] font-semibold tracking-wide flex-shrink-0 border transition-all ${
+                isLight
+                  ? 'bg-amber-500/15 text-amber-800 border-amber-500/30'
+                  : 'bg-amber-400/15 text-amber-300 border-amber-400/30 shadow-[0_0_10px_rgba(251,191,36,0.15)]'
+              }`}>
+                <Box className="w-3 h-3 stroke-[2.2]" />
+                <span>Sub-Block</span>
+                {subBlockTaskCount > 0 && (
+                  <span className="opacity-75 font-mono">({subBlockTaskCount})</span>
+                )}
+              </span>
+            )}
+          </div>
+
+          {/* Action Icons & Controls */}
           <div 
-            className="flex items-center gap-1 opacity-70 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity duration-150 z-10 flex-shrink-0"
+            className="flex items-center gap-1 z-10 flex-shrink-0"
             onClick={(e) => e.stopPropagation()}
           >
+            {/* If Sub-Block: Show Open Button */}
+            {isSubBlock ? (
+              <button
+                type="button"
+                onClick={() => onOpenSubBlock?.(todo.subBlockId)}
+                title="Open Sub-Block"
+                className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-semibold cursor-pointer transition-all active:scale-95 ${
+                  isLight
+                    ? 'bg-amber-500 text-white hover:bg-amber-600 shadow-xs'
+                    : 'bg-amber-400/20 text-amber-300 hover:bg-amber-400/30 border border-amber-400/40 shadow-xs'
+                }`}
+              >
+                <span>Open</span>
+                <ChevronRight className="w-3.5 h-3.5 stroke-[2.5]" />
+              </button>
+            ) : (
+              /* Turn into Sub-Block button (1-click alternative to 3s hold) */
+              <button
+                type="button"
+                onClick={() => triggerConversion()}
+                title="Turn into Sub-Block (or hold for 3s)"
+                className={`p-1.5 rounded-lg opacity-70 sm:opacity-0 sm:group-hover:opacity-100 transition-all cursor-pointer active:scale-90 ${
+                  isLight 
+                    ? 'text-zinc-600 hover:text-amber-600 hover:bg-amber-50' 
+                    : 'text-white/60 hover:text-amber-300 hover:bg-white/10'
+                }`}
+              >
+                <Box className="w-3.5 h-3.5 stroke-[2]" />
+              </button>
+            )}
+
+            {/* Edit Button */}
             <button
+              type="button"
               onClick={handleStartEdit}
               title="Edit task"
-              className={`p-1.5 rounded-lg transition-colors cursor-pointer active:scale-95 ${
-                rowContrast.isLight 
-                  ? 'text-[#111111]/70 hover:text-[#111111] hover:bg-black/10' 
-                  : 'text-white/70 hover:text-white hover:bg-white/15'
+              className={`p-1.5 rounded-lg opacity-70 sm:opacity-0 sm:group-hover:opacity-100 transition-all cursor-pointer active:scale-90 ${
+                isLight 
+                  ? 'text-zinc-600 hover:text-black hover:bg-black/5' 
+                  : 'text-white/60 hover:text-white hover:bg-white/10'
               }`}
             >
-              <Pencil className="w-3.5 h-3.5" />
+              <Pencil className="w-3.5 h-3.5 stroke-[2]" />
             </button>
+
+            {/* Delete Button */}
             <button
+              type="button"
               onClick={() => onDelete?.(todo)}
               title="Delete task"
-              className={`p-1.5 rounded-lg transition-colors cursor-pointer active:scale-95 ${
-                rowContrast.isLight 
-                  ? 'text-[#111111]/70 hover:text-rose-600 hover:bg-rose-500/10' 
-                  : 'text-white/70 hover:text-rose-400 hover:bg-rose-500/20'
+              className={`p-1.5 rounded-lg opacity-70 sm:opacity-0 sm:group-hover:opacity-100 transition-all cursor-pointer active:scale-90 ${
+                isLight 
+                  ? 'text-zinc-600 hover:text-rose-600 hover:bg-rose-50' 
+                  : 'text-white/60 hover:text-rose-400 hover:bg-rose-500/20'
               }`}
             >
-              <Trash2 className="w-3.5 h-3.5" />
+              <Trash2 className="w-3.5 h-3.5 stroke-[2]" />
             </button>
           </div>
         </>
+      )}
+
+      {/* 3s Hold Charging Status Overlay */}
+      {isHolding && holdProgress > 0 && (
+        <div className="absolute right-3.5 top-1/2 -translate-y-1/2 z-20 pointer-events-none flex items-center gap-1.5 px-2 py-0.5 rounded-md bg-black/80 text-amber-300 border border-amber-400/40 text-[11px] font-mono shadow-lg animate-pulse">
+          <Sparkles className="w-3 h-3 text-amber-400 animate-spin" />
+          <span>Creating Block... {Math.round(holdProgress * 100)}%</span>
+        </div>
       )}
 
       {/* Deleting Indicator Label for Hold-Delete */}
