@@ -583,12 +583,12 @@ export default function App() {
                   onClick={() => setMobileActiveWidget('spotify')}
                   className={`px-3 py-1 rounded-full text-[11px] font-semibold transition-all cursor-pointer flex items-center gap-1.5 ${
                     mobileActiveWidget === 'spotify'
-                      ? 'bg-[#1DB954]/90 text-white shadow-md'
+                      ? 'bg-emerald-500/90 text-white shadow-md'
                       : 'text-white/70 hover:text-white'
                   }`}
                 >
                   <span>🎵</span>
-                  <span>Spotify</span>
+                  <span>Music</span>
                 </button>
               </div>
             )}

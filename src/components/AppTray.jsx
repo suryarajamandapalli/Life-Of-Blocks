@@ -118,7 +118,7 @@ export default function AppTray({
             </span>
           </button>
 
-          {/* App 2: Spotify Web Player */}
+          {/* App 2: Lo-Fi Music Player */}
           <button
             onClick={() => {
               onToggleSpotify?.();
@@ -126,14 +126,14 @@ export default function AppTray({
             }}
             className={`group flex flex-col items-center justify-center p-3.5 rounded-2xl border transition-all duration-200 cursor-pointer ${
               isSpotifyVisible
-                ? 'bg-[#1DB954]/20 border-[#1DB954]/40 text-emerald-200 shadow-md'
+                ? 'bg-emerald-500/20 border-emerald-500/40 text-emerald-200 shadow-md'
                 : 'bg-white/[0.04] hover:bg-white/[0.09] border-white/10 text-white/80 hover:text-white hover:-translate-y-0.5'
             }`}
           >
-            <div className="w-10 h-10 rounded-xl bg-[#1DB954]/20 border border-[#1DB954]/30 flex items-center justify-center mb-2 group-hover:scale-105 transition-transform text-[#1DB954]">
+            <div className="w-10 h-10 rounded-xl bg-emerald-500/20 border border-emerald-500/30 flex items-center justify-center mb-2 group-hover:scale-105 transition-transform text-emerald-400">
               <Music2 className="w-5 h-5 stroke-[2.2]" />
             </div>
-            <span className="text-xs font-semibold tracking-wide">Spotify Lo-Fi</span>
+            <span className="text-xs font-semibold tracking-wide">Lo-Fi Music</span>
             <span className="text-[10px] text-white/40 font-mono mt-0.5">
               {isSpotifyVisible ? 'Active' : 'Press S'}
             </span>

@@ -588,7 +588,7 @@ export default function PomodoroWidget({ isVisible, onClose, onToggleSpotify, is
           {onToggleSpotify && (
             <button
               onClick={onToggleSpotify}
-              title={isSpotifyVisible ? 'Close Spotify Player (S)' : 'Open Spotify Player (S)'}
+              title={isSpotifyVisible ? 'Close Music Player (S)' : 'Open Music Player (S)'}
               className={`w-7 h-7 rounded-lg border border-black/20 flex items-center justify-center cursor-pointer transition-colors shadow-inner flex-shrink-0 ${
                 isSpotifyVisible 
                   ? 'bg-[#1DB954]/25 text-[#1DB954] border-[#1DB954]/50 shadow-[0_0_8px_rgba(29,185,84,0.3)]' 
