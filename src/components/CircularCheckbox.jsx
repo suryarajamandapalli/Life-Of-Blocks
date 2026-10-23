@@ -18,26 +18,26 @@ export default function CircularCheckbox({ checked, onChange, disabled, isLightM
       className="relative flex items-center justify-center w-[19px] h-[19px] rounded-full focus:outline-none flex-shrink-0 group cursor-pointer active:scale-90"
       style={{
         background: checked 
-          ? (isLightMode ? '#111111' : '#FFFFFF')
+          ? (isLightMode ? 'rgba(16, 185, 129, 0.18)' : 'rgba(16, 185, 129, 0.24)')
           : (isLightMode ? 'rgba(0, 0, 0, 0.08)' : 'rgba(0, 0, 0, 0.35)'),
         border: checked 
-          ? (isLightMode ? '1.5px solid #111111' : '1.5px solid #FFFFFF')
+          ? (isLightMode ? '1.8px solid #059669' : '1.8px solid #34d399')
           : (isLightMode ? '1.5px solid rgba(17, 17, 17, 0.65)' : '1.5px solid rgba(255, 255, 255, 0.75)'),
         boxShadow: checked
-          ? (isLightMode ? '0 1px 3px rgba(0,0,0,0.2)' : '0 1px 6px rgba(255,255,255,0.25)')
+          ? (isLightMode ? '0 0 6px rgba(5, 150, 105, 0.35)' : '0 0 10px rgba(52, 211, 153, 0.5)')
           : (isLightMode ? '0 1px 2px rgba(255,255,255,0.4)' : '0 1px 4px rgba(0,0,0,0.5)'),
         backdropFilter: 'blur(4px)',
         WebkitBackdropFilter: 'blur(4px)',
-        transition: 'border-color 250ms ease, background-color 250ms ease, box-shadow 250ms ease'
+        transition: 'border-color 200ms ease, background-color 200ms ease, box-shadow 200ms ease'
       }}
     >
-      {/* Checkmark icon */}
+      {/* Green Checkmark icon */}
       <span
         className={`flex items-center justify-center transition-all duration-150 transform ${
           checked ? 'scale-100 opacity-100' : 'scale-50 opacity-0'
         }`}
       >
-        <Check className={`w-3 h-3 stroke-[3.2] ${isLightMode ? 'text-white' : 'text-zinc-950'}`} />
+        <Check className={`w-3.5 h-3.5 stroke-[3.2] ${isLightMode ? 'text-emerald-700' : 'text-emerald-400'}`} />
       </span>
 
       {/* Subtle hover ring when unchecked */}

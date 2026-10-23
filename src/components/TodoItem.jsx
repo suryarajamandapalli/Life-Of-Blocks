@@ -198,7 +198,7 @@ export default function TodoItem({
           : isSubBlock
             ? 'hover:bg-white/[0.06] border border-transparent hover:border-amber-400/20'
             : 'hover:bg-white/[0.06] border border-transparent hover:border-white/10'
-      } ${todo.completed && !isEditing ? 'opacity-50' : 'opacity-100'}`}
+      }`}
     >
       {/* 3-Second Hold-to-Convert Energy Fill Bar */}
       {holdProgress > 0 && (
@@ -295,13 +295,11 @@ export default function TodoItem({
               }}
               onDoubleClick={handleStartEdit}
               className={`text-[14.5px] sm:text-[15.5px] leading-snug tracking-wide transition-colors duration-200 truncate ${
+                isLight ? 'text-zinc-950' : 'text-white'
+              } ${
                 todo.completed
-                  ? isLight
-                    ? 'line-through text-zinc-500 font-normal'
-                    : 'line-through text-white/45 font-normal'
-                  : isLight
-                    ? 'text-zinc-950 font-medium'
-                    : 'text-white font-medium'
+                  ? 'line-through decoration-1 decoration-current'
+                  : 'font-medium'
               }`}
               style={{
                 textShadow: isLight
