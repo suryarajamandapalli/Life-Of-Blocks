@@ -43,6 +43,33 @@ export default function MainScreen({
         </button>
       </h1>
 
+      {/* Empty State: If no blocks exist, tell user that click + to add a block */}
+      {!loading && rootBlocks.length === 0 && (
+        <div 
+          onClick={onOpenCreateModal}
+          className="mt-5 sm:mt-6 cursor-pointer group flex items-center justify-center animate-fade-in"
+          title="Click to add a block"
+        >
+          <p 
+            className={`text-xs sm:text-sm tracking-wider font-light transition-all duration-200 select-none ${
+              isLight
+                ? 'text-zinc-800/80 group-hover:text-zinc-950 drop-shadow-[0_1px_4px_rgba(255,255,255,0.85)]'
+                : 'text-white/60 group-hover:text-white drop-shadow-[0_2px_10px_rgba(0,0,0,0.9)]'
+            }`}
+          >
+            Click{' '}
+            <span className={`font-semibold px-1.5 py-0.5 rounded transition-all ${
+              isLight
+                ? 'bg-black/10 border border-black/15 text-zinc-950 group-hover:bg-black/15'
+                : 'bg-white/10 border border-white/15 text-white group-hover:bg-white/20 group-hover:text-emerald-300'
+            }`}>
+              +
+            </span>{' '}
+            to add a block
+          </p>
+        </div>
+      )}
+
       {/* When blocks exist: display the user's blocks */}
       {!loading && rootBlocks.length > 0 && (
         <div className="w-full grid grid-cols-1 sm:grid-cols-2 gap-3.5 sm:gap-4 mt-8 sm:mt-12 mb-6 sm:mb-8">
