@@ -322,11 +322,20 @@ export default function TodoItem({
             )}
           </div>
 
-          {/* Action Icons & Controls — hidden until hover, right-click or long-press */}
+          {/* Action Icons & Controls — crisp frosted glass pill with guaranteed contrast */}
           <div 
-            className={`flex items-center gap-1 z-10 flex-shrink-0 transition-opacity ${
-              showActions ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'
+            className={`flex items-center gap-1 z-10 flex-shrink-0 px-2 py-1 rounded-xl backdrop-blur-2xl border shadow-lg transition-all duration-150 ${
+              isLight
+                ? 'bg-white/90 border-black/15 shadow-black/10'
+                : 'bg-black/75 border-white/20 shadow-black/60'
+            } ${
+              showActions ? 'opacity-100 scale-100' : 'opacity-0 scale-95 group-hover:opacity-100 group-hover:scale-100 pointer-events-none group-hover:pointer-events-auto'
             }`}
+            style={{
+              boxShadow: isLight
+                ? '0 4px 12px rgba(0, 0, 0, 0.08), inset 0 1px 1px rgba(255, 255, 255, 0.5)'
+                : '0 4px 16px rgba(0, 0, 0, 0.6), inset 0 1px 1px rgba(255, 255, 255, 0.15)'
+            }}
             onClick={(e) => e.stopPropagation()}
           >
             {/* If Sub-Block: Show Open Button */}
@@ -335,10 +344,10 @@ export default function TodoItem({
                 type="button"
                 onClick={() => onOpenSubBlock?.(todo.subBlockId)}
                 title="Open Sub-Block"
-                className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-lg text-xs font-medium cursor-pointer transition-all opacity-70 group-hover:opacity-100 ${
+                className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-semibold cursor-pointer transition-all ${
                   isLight
-                    ? 'text-amber-700 hover:bg-amber-500/10'
-                    : 'text-amber-300 hover:bg-amber-400/10'
+                    ? 'text-amber-800 hover:bg-amber-500/10'
+                    : 'text-amber-300 hover:bg-amber-400/20'
                 }`}
               >
                 <span>Open</span>
@@ -350,13 +359,13 @@ export default function TodoItem({
                 type="button"
                 onClick={() => triggerConversion()}
                 title="Turn into Sub-Block (or hold for 3s)"
-                className={`p-1.5 rounded-lg opacity-0 group-hover:opacity-70 hover:!opacity-100 transition-all cursor-pointer active:scale-90 ${
+                className={`p-1.5 rounded-lg transition-all cursor-pointer active:scale-90 ${
                   isLight 
-                    ? 'text-zinc-600 hover:text-amber-600 hover:bg-amber-50' 
-                    : 'text-white/60 hover:text-amber-300 hover:bg-white/10'
+                    ? 'text-zinc-700 hover:text-amber-600 hover:bg-black/5' 
+                    : 'text-white/90 hover:text-amber-300 hover:bg-white/15'
                 }`}
               >
-                <Box className="w-3.5 h-3.5 stroke-[2]" />
+                <Box className="w-4 h-4 stroke-[2.2]" />
               </button>
             )}
 
@@ -365,13 +374,13 @@ export default function TodoItem({
               type="button"
               onClick={handleStartEdit}
               title="Edit task"
-              className={`p-1.5 rounded-lg opacity-0 group-hover:opacity-70 hover:!opacity-100 transition-all cursor-pointer active:scale-90 ${
+              className={`p-1.5 rounded-lg transition-all cursor-pointer active:scale-90 ${
                 isLight 
-                  ? 'text-zinc-600 hover:text-black hover:bg-black/5' 
-                  : 'text-white/60 hover:text-white hover:bg-white/10'
+                  ? 'text-zinc-700 hover:text-black hover:bg-black/5' 
+                  : 'text-white/90 hover:text-white hover:bg-white/15'
               }`}
             >
-              <Pencil className="w-3.5 h-3.5 stroke-[2]" />
+              <Pencil className="w-4 h-4 stroke-[2.2]" />
             </button>
 
             {/* Delete Button */}
@@ -379,13 +388,13 @@ export default function TodoItem({
               type="button"
               onClick={() => onDelete?.(todo)}
               title="Delete task"
-              className={`p-1.5 rounded-lg opacity-0 group-hover:opacity-70 hover:!opacity-100 transition-all cursor-pointer active:scale-90 ${
+              className={`p-1.5 rounded-lg transition-all cursor-pointer active:scale-90 ${
                 isLight 
-                  ? 'text-zinc-600 hover:text-rose-600 hover:bg-rose-50' 
-                  : 'text-white/60 hover:text-rose-400 hover:bg-rose-500/20'
+                  ? 'text-zinc-700 hover:text-rose-600 hover:bg-rose-50' 
+                  : 'text-white/90 hover:text-rose-400 hover:bg-rose-500/20'
               }`}
             >
-              <Trash2 className="w-3.5 h-3.5 stroke-[2]" />
+              <Trash2 className="w-4 h-4 stroke-[2.2]" />
             </button>
           </div>
         </>
