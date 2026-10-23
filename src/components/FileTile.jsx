@@ -116,10 +116,6 @@ export default function FileTile({
               alt={file.name}
               className="w-full h-full object-cover object-top transition-transform duration-300 group-hover:scale-105"
             />
-            {/* Subtle elegant PDF badge overlay in top-left */}
-            <span className="absolute top-2 left-2 px-1.5 py-0.5 rounded-md bg-rose-600/90 text-[10px] font-bold text-white tracking-wider shadow-md pointer-events-none backdrop-blur-sm">
-              PDF
-            </span>
           </div>
         );
       }
