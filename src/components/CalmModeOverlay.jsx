@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import gsap from 'gsap';
+import * as THREE from 'three';
 import { sound } from '../services/sound';
-import { Check } from 'lucide-react';
 
 // Verified 4K / 1080p Cinematic Zen Environment Videos (Rain, Beach, Deep Space, Ocean, Forest, Snow, Clouds)
 const ZEN_SCENES = [
@@ -69,46 +69,356 @@ const ZEN_MESSAGES = [
   "Nothing to rush. Just keep moving."
 ];
 
+// Card geometric dimensions
+const CARD_WIDTH = 340;
+const CARD_HEIGHT = 210;
+const CARD_RADIUS = 26;
+
+// Sutherland-Hodgman Polygon Clipping with Perpendicular Bisector
+function clipPolygonWithBisector(poly, pi, pj) {
+  const mx = (pi.x + pj.x) / 2;
+  const my = (pi.y + pj.y) / 2;
+  const nx = pj.x - pi.x;
+  const ny = pj.y - pi.y;
+
+  function isInside(p) {
+    return ((p.x - mx) * nx + (p.y - my) * ny) <= 0.0001;
+  }
+
+  function intersection(s, e) {
+    const dsx = s.x - mx;
+    const dsy = s.y - my;
+    const dex = e.x - mx;
+    const dey = e.y - my;
+    const distS = dsx * nx + dsy * ny;
+    const distE = dex * nx + dey * ny;
+    const denom = distS - distE;
+    if (Math.abs(denom) < 1e-6) return s;
+    const t = Math.max(0, Math.min(1, distS / denom));
+    return {
+      x: s.x + t * (e.x - s.x),
+      y: s.y + t * (e.y - s.y)
+    };
+  }
+
+  const output = [];
+  if (!poly || poly.length === 0) return output;
+  let s = poly[poly.length - 1];
+  for (let i = 0; i < poly.length; i++) {
+    const e = poly[i];
+    if (isInside(e)) {
+      if (isInside(s)) {
+        output.push(e);
+      } else {
+        output.push(intersection(s, e));
+        output.push(e);
+      }
+    } else if (isInside(s)) {
+      output.push(intersection(s, e));
+    }
+    s = e;
+  }
+  return output;
+}
+
+// Generate organic Voronoi polygon shards clustered at tap point
+function generateVoronoiCells(W, H, tapX, tapY) {
+  const halfW = W / 2;
+  const halfH = H / 2;
+  // Center coordinates relative to card center (0, 0)
+  const relX = tapX - halfW;
+  const relY = tapY - halfH;
+
+  const points = [];
+  points.push({ x: relX, y: relY });
+
+  // Concentric organic rings with radial jitter
+  const rings = [
+    { count: 12, minR: 12, maxR: 38 },
+    { count: 18, minR: 38, maxR: 85 },
+    { count: 20, minR: 85, maxR: 155 },
+    { count: 16, minR: 150, maxR: 250 }
+  ];
+
+  rings.forEach(({ count, minR, maxR }) => {
+    for (let i = 0; i < count; i++) {
+      const angle = (i / count) * Math.PI * 2 + (Math.random() - 0.5) * 0.35;
+      const r = minR + Math.random() * (maxR - minR);
+      const px = Math.max(-halfW - 25, Math.min(halfW + 25, relX + Math.cos(angle) * r));
+      const py = Math.max(-halfH - 25, Math.min(halfH + 25, relY + Math.sin(angle) * r));
+      points.push({ x: px, y: py });
+    }
+  });
+
+  const baseRect = [
+    { x: -halfW, y: -halfH },
+    { x: halfW, y: -halfH },
+    { x: halfW, y: halfH },
+    { x: -halfW, y: halfH }
+  ];
+
+  const cells = [];
+
+  for (let i = 0; i < points.length; i++) {
+    const pi = points[i];
+    let cell = [...baseRect];
+
+    for (let j = 0; j < points.length; j++) {
+      if (i === j) continue;
+      const pj = points[j];
+      const distSq = (pi.x - pj.x) ** 2 + (pi.y - pj.y) ** 2;
+      if (distSq > (Math.max(W, H) * 1.5) ** 2) continue;
+
+      cell = clipPolygonWithBisector(cell, pi, pj);
+      if (cell.length < 3) break;
+    }
+
+    if (cell.length >= 3) {
+      let area = 0;
+      let cx = 0;
+      let cy = 0;
+      for (let k = 0; k < cell.length; k++) {
+        const p1 = cell[k];
+        const p2 = cell[(k + 1) % cell.length];
+        const cross = (p1.x * p2.y - p2.x * p1.y);
+        area += cross;
+        cx += (p1.x + p2.x) * cross;
+        cy += (p1.y + p2.y) * cross;
+      }
+      area = Math.abs(area) / 2;
+      if (area > 8) {
+        cx /= (6 * area);
+        cy /= (6 * area);
+        const dist = Math.hypot(cx - relX, cy - relY);
+        const angle = Math.atan2(cy - relY, cx - relX);
+        const tier = dist <= 50 ? 1 : (dist <= 125 ? 2 : 3);
+        cells.push({ vertices: cell, cx, cy, area, dist, angle, tier });
+      }
+    }
+  }
+  return cells;
+}
+
+// Render the completed Block onto a high-DPI 2D canvas texture
+function renderCardTexture(canvas, { displayName, totalTasks = 0, width = CARD_WIDTH, height = CARD_HEIGHT, dpr = 2 }) {
+  canvas.width = width * dpr;
+  canvas.height = height * dpr;
+  const ctx = canvas.getContext('2d');
+  ctx.save();
+  ctx.scale(dpr, dpr);
+  ctx.clearRect(0, 0, width, height);
+
+  // 1. Smoked Glass Card Body with Rounded Corners
+  ctx.beginPath();
+  if (ctx.roundRect) {
+    ctx.roundRect(0, 0, width, height, CARD_RADIUS);
+  } else {
+    ctx.rect(0, 0, width, height);
+  }
+
+  const grad = ctx.createLinearGradient(0, 0, width, height);
+  grad.addColorStop(0, 'rgba(32, 38, 52, 0.94)');
+  grad.addColorStop(1, 'rgba(14, 16, 24, 0.97)');
+  ctx.fillStyle = grad;
+  ctx.fill();
+
+  // 2. Translucent Glass Border
+  ctx.lineWidth = 1.2;
+  ctx.strokeStyle = 'rgba(255, 255, 255, 0.22)';
+  ctx.stroke();
+
+  // 3. Diagonal Specular Glass Reflection Sheen
+  ctx.save();
+  ctx.clip();
+  const sheenGrad = ctx.createLinearGradient(0, 0, width, height);
+  sheenGrad.addColorStop(0, 'rgba(255, 255, 255, 0.28)');
+  sheenGrad.addColorStop(0.35, 'rgba(255, 255, 255, 0.05)');
+  sheenGrad.addColorStop(0.7, 'transparent');
+  sheenGrad.addColorStop(1, 'rgba(255, 255, 255, 0.04)');
+  ctx.fillStyle = sheenGrad;
+  ctx.fillRect(0, 0, width, height);
+  ctx.restore();
+
+  // 4. Status Indicator (Top Left: Emerald Glow Dot + COMPLETED)
+  ctx.save();
+  // Dot Glow
+  const glow = ctx.createRadialGradient(28, 28, 0, 28, 28, 10);
+  glow.addColorStop(0, 'rgba(52, 211, 153, 0.9)');
+  glow.addColorStop(1, 'rgba(52, 211, 153, 0)');
+  ctx.fillStyle = glow;
+  ctx.beginPath();
+  ctx.arc(28, 28, 10, 0, Math.PI * 2);
+  ctx.fill();
+
+  // Solid Center Dot
+  ctx.fillStyle = '#34d399';
+  ctx.beginPath();
+  ctx.arc(28, 28, 3.5, 0, Math.PI * 2);
+  ctx.fill();
+
+  // Status Label Text
+  ctx.font = '600 11px ui-monospace, monospace';
+  ctx.fillStyle = '#34d399';
+  ctx.fillText('COMPLETED', 44, 32);
+  ctx.restore();
+
+  // 5. Emerald Checkmark Badge (Top Right)
+  ctx.save();
+  const checkX = width - 36;
+  const checkY = 28;
+  ctx.beginPath();
+  ctx.arc(checkX, checkY, 11, 0, Math.PI * 2);
+  ctx.fillStyle = 'rgba(16, 185, 129, 0.2)';
+  ctx.fill();
+  ctx.strokeStyle = 'rgba(52, 211, 153, 0.55)';
+  ctx.lineWidth = 1.2;
+  ctx.stroke();
+
+  // Checkmark icon stroke
+  ctx.beginPath();
+  ctx.moveTo(checkX - 4.5, checkY - 0.5);
+  ctx.lineTo(checkX - 1.2, checkY + 3.2);
+  ctx.lineTo(checkX + 4.8, checkY - 3.2);
+  ctx.strokeStyle = '#6ee7b7';
+  ctx.lineWidth = 2.2;
+  ctx.lineCap = 'round';
+  ctx.lineJoin = 'round';
+  ctx.stroke();
+  ctx.restore();
+
+  // 6. Block Title
+  ctx.save();
+  ctx.font = '600 21px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
+  ctx.fillStyle = '#ffffff';
+  ctx.shadowColor = 'rgba(0, 0, 0, 0.8)';
+  ctx.shadowBlur = 10;
+  ctx.shadowOffsetY = 2;
+
+  // Truncate title if too long for card
+  let title = displayName || 'Completed Block';
+  if (ctx.measureText(title).width > width - 56) {
+    while (title.length > 3 && ctx.measureText(title + '...').width > width - 56) {
+      title = title.slice(0, -1);
+    }
+    title += '...';
+  }
+  ctx.fillText(title, 24, 86);
+  ctx.restore();
+
+  // 7. Glowing 100% Progress Bar
+  const barY = 126;
+  const barW = width - 48;
+  const barH = 9;
+
+  // Track background
+  ctx.save();
+  ctx.beginPath();
+  if (ctx.roundRect) ctx.roundRect(24, barY, barW, barH, 4.5);
+  else ctx.rect(24, barY, barW, barH);
+  ctx.fillStyle = 'rgba(0, 0, 0, 0.55)';
+  ctx.fill();
+  ctx.strokeStyle = 'rgba(255, 255, 255, 0.12)';
+  ctx.lineWidth = 1;
+  ctx.stroke();
+
+  // 100% Glowing Gradient Fill
+  const barGrad = ctx.createLinearGradient(24, 0, 24 + barW, 0);
+  barGrad.addColorStop(0, '#34d399'); // emerald
+  barGrad.addColorStop(0.5, '#2dd4bf'); // teal
+  barGrad.addColorStop(1, '#fcd34d'); // gold
+  ctx.beginPath();
+  if (ctx.roundRect) ctx.roundRect(25, barY + 1, barW - 2, barH - 2, 3.5);
+  else ctx.rect(25, barY + 1, barW - 2, barH - 2);
+  ctx.fillStyle = barGrad;
+  ctx.shadowColor = 'rgba(52, 211, 153, 0.65)';
+  ctx.shadowBlur = 8;
+  ctx.fill();
+  ctx.restore();
+
+  // 8. Progress Metrics Subtext
+  ctx.save();
+  ctx.font = '500 11px ui-monospace, monospace';
+  ctx.fillStyle = 'rgba(255, 255, 255, 0.55)';
+  ctx.fillText('100% DONE', 24, barY + 28);
+
+  const taskText = totalTasks > 0 ? `${totalTasks} / ${totalTasks} TASKS` : 'ALL TASKS COMPLETED';
+  const taskTextWidth = ctx.measureText(taskText).width;
+  ctx.fillText(taskText, width - 24 - taskTextWidth, barY + 28);
+  ctx.restore();
+
+  ctx.restore();
+}
+
 export default function CalmModeOverlay({ isActive, block, blockName, totalTasks = 0, onClose }) {
   // Experience phases: 'break' -> 'shattering' -> 'zen'
   const [phase, setPhase] = useState('break');
-  const [crackCount, setCrackCount] = useState(0); // 0 -> 1 -> 2 -> 3 (shatters)
+  const [crackCount, setCrackCount] = useState(0); // 0 -> 1 -> 2 -> 3 (triggers Three.js shatter)
   const [currentSceneIndex, setCurrentSceneIndex] = useState(0);
   const [zenMessage, setZenMessage] = useState(() => ZEN_MESSAGES[0]);
 
   const rootContainerRef = useRef(null);
-  const blockCardRef = useRef(null);
-  const canvasRef = useRef(null);
+  const blockCardWrapperRef = useRef(null);
+  const interactiveCanvasRef = useRef(null);
+  const textureCanvasRef = useRef(null);
+  const threeMountRef = useRef(null);
   const videoRef = useRef(null);
   const stopMusicRef = useRef(null);
   const isClosingRef = useRef(false);
   const animationFrameRef = useRef(null);
 
-  // Crack branches state for Hit 1 & Hit 2
-  const crackBranchesRef = useRef([]);
+  // Voronoi shards and optical ripples state
+  const voronoiCellsRef = useRef([]);
+  const impactCoordsRef = useRef({ x: CARD_WIDTH / 2, y: CARD_HEIGHT / 2 });
   const ripplesRef = useRef([]);
+  const microSparksRef = useRef([]);
 
-  // Reset and initialize on active trigger
+  // Three.js instances
+  const threeSceneRef = useRef(null);
+  const threeRendererRef = useRef(null);
+
+  const displayName = blockName || block?.name || 'Completed Block';
+
+  // Initialize and Reset on Modal Activation
   useEffect(() => {
     if (!isActive) return;
 
     setPhase('break');
     setCrackCount(0);
     isClosingRef.current = false;
-    crackBranchesRef.current = [];
+    voronoiCellsRef.current = [];
     ripplesRef.current = [];
+    microSparksRef.current = [];
 
-    // Pick random scene & peaceful message
+    // Select random background scene & calm message
     setCurrentSceneIndex(Math.floor(Math.random() * ZEN_SCENES.length));
     const randomMsg = ZEN_MESSAGES[Math.floor(Math.random() * ZEN_MESSAGES.length)];
     setZenMessage(randomMsg);
 
-    // Initial entrance animation for the physical Block
-    if (blockCardRef.current) {
-      gsap.fromTo(blockCardRef.current, 
+    // Initial entrance animation for the Block
+    if (blockCardWrapperRef.current) {
+      gsap.fromTo(blockCardWrapperRef.current,
         { scale: 0.9, opacity: 0, y: 24 },
         { scale: 1, opacity: 1, y: 0, duration: 0.8, ease: 'back.out(1.15)' }
       );
+    }
+
+    // Paint initial pristine intact card texture (Zero cracks)
+    if (textureCanvasRef.current && interactiveCanvasRef.current) {
+      renderCardTexture(textureCanvasRef.current, {
+        displayName,
+        totalTasks,
+        width: CARD_WIDTH,
+        height: CARD_HEIGHT,
+        dpr: 2
+      });
+
+      // Paint pristine card onto interactive display canvas
+      const displayCanvas = interactiveCanvasRef.current;
+      displayCanvas.width = CARD_WIDTH * 2;
+      displayCanvas.height = CARD_HEIGHT * 2;
+      const ctx = displayCanvas.getContext('2d');
+      ctx.clearRect(0, 0, displayCanvas.width, displayCanvas.height);
+      ctx.drawImage(textureCanvasRef.current, 0, 0);
     }
 
     return () => {
@@ -120,8 +430,30 @@ export default function CalmModeOverlay({ isActive, block, blockName, totalTasks
         stopMusicRef.current();
         stopMusicRef.current = null;
       }
+      cleanupThreeScene();
     };
-  }, [isActive]);
+  }, [isActive, displayName, totalTasks]);
+
+  // Clean up Three.js WebGL scene
+  const cleanupThreeScene = () => {
+    if (threeSceneRef.current) {
+      threeSceneRef.current.traverse((obj) => {
+        if (obj.geometry) obj.geometry.dispose();
+        if (obj.material) {
+          if (Array.isArray(obj.material)) obj.material.forEach(m => m.dispose());
+          else obj.material.dispose();
+        }
+      });
+      threeSceneRef.current = null;
+    }
+    if (threeRendererRef.current) {
+      threeRendererRef.current.dispose();
+      if (threeRendererRef.current.domElement && threeRendererRef.current.domElement.parentNode) {
+        threeRendererRef.current.domElement.parentNode.removeChild(threeRendererRef.current.domElement);
+      }
+      threeRendererRef.current = null;
+    }
+  };
 
   // Rotate cinematic background scenes smoothly during Zen Mode
   useEffect(() => {
@@ -129,274 +461,342 @@ export default function CalmModeOverlay({ isActive, block, blockName, totalTasks
 
     const interval = setInterval(() => {
       setCurrentSceneIndex(prev => (prev + 1) % ZEN_SCENES.length);
-    }, 12000);
+    }, 14000);
 
     return () => clearInterval(interval);
   }, [isActive, phase]);
 
-  // Generate recursive realistic fractal crack branches from impact point
-  const generateCrackBranch = (originX, originY, angle, depth, length) => {
-    const branches = [];
-    let currX = originX;
-    let currY = originY;
-    let currAngle = angle;
+  // Draw the physical glass block with internal optical fissures, refraction, and shockwaves
+  const renderInteractiveBlock = (currentCrack) => {
+    const displayCanvas = interactiveCanvasRef.current;
+    const texCanvas = textureCanvasRef.current;
+    if (!displayCanvas || !texCanvas) return;
 
-    for (let i = 0; i < depth; i++) {
-      const segLen = length * (0.75 + Math.random() * 0.45);
-      currAngle += (Math.random() - 0.5) * 0.45; // jagged deviation
-      const nextX = currX + Math.cos(currAngle) * segLen;
-      const nextY = currY + Math.sin(currAngle) * segLen;
+    const ctx = displayCanvas.getContext('2d');
+    const dpr = 2;
+    ctx.clearRect(0, 0, displayCanvas.width, displayCanvas.height);
 
-      branches.push({ x1: currX, y1: currY, x2: nextX, y2: nextY });
+    const cells = voronoiCellsRef.current;
+    const halfW = CARD_WIDTH / 2;
+    const halfH = CARD_HEIGHT / 2;
 
-      // Sub-branchlet splitting off
-      if (i > 0 && Math.random() < 0.55) {
-        const subAngle = currAngle + (Math.random() < 0.5 ? 0.7 : -0.7);
-        const subLen = segLen * 0.65;
-        branches.push({
-          x1: currX,
-          y1: currY,
-          x2: currX + Math.cos(subAngle) * subLen,
-          y2: currY + Math.sin(subAngle) * subLen
-        });
+    if (currentCrack === 0 || cells.length === 0) {
+      // Pristine Intact Card
+      ctx.drawImage(texCanvas, 0, 0);
+      return;
+    }
+
+    // For Hit 1 & Hit 2: Render cells with genuine physical displacement and cleavage
+    // Hit 1: Tier 1 cells offset by 0.6px
+    // Hit 2: Tier 1 cells offset by 1.8px, Tier 2 cells offset by 0.9px (visual physical separation)
+    cells.forEach(cell => {
+      let offsetDist = 0;
+      if (currentCrack === 1) {
+        if (cell.tier === 1) offsetDist = 0.6;
+      } else if (currentCrack === 2) {
+        if (cell.tier === 1) offsetDist = 1.8;
+        else if (cell.tier === 2) offsetDist = 0.9;
       }
 
-      currX = nextX;
-      currY = nextY;
-    }
-    return branches;
-  };
+      const ox = Math.cos(cell.angle) * offsetDist;
+      const oy = Math.sin(cell.angle) * offsetDist;
 
-  // Draw overlay cracks and ripples on the card canvas
-  const drawCracksAndRipples = () => {
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-    const ctx = canvas.getContext('2d');
-    if (!ctx) return;
+      ctx.save();
+      ctx.beginPath();
+      cell.vertices.forEach((v, idx) => {
+        const vx = (v.x + halfW + ox) * dpr;
+        const vy = (v.y + halfH + oy) * dpr;
+        if (idx === 0) ctx.moveTo(vx, vy);
+        else ctx.lineTo(vx, vy);
+      });
+      ctx.closePath();
+      ctx.clip();
 
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
+      // Draw the card texture shifted by the cell's displacement
+      ctx.drawImage(texCanvas, ox * dpr, oy * dpr);
 
-    // 1. Draw expanding impact ripples
+      // Glass Edge Facet Cleavage on cracked boundaries
+      if (
+        (currentCrack === 1 && cell.tier === 1) ||
+        (currentCrack === 2 && (cell.tier === 1 || cell.tier === 2))
+      ) {
+        // Internal dark optical shadow line (light trapped inside glass fracture)
+        ctx.strokeStyle = currentCrack === 2 ? 'rgba(10, 14, 22, 0.85)' : 'rgba(12, 16, 26, 0.70)';
+        ctx.lineWidth = currentCrack === 2 ? 2.4 : 1.6;
+        ctx.stroke();
+
+        // Faceted specular glint along cracked glass edge
+        ctx.strokeStyle = currentCrack === 2 ? 'rgba(255, 255, 255, 0.55)' : 'rgba(255, 255, 255, 0.40)';
+        ctx.lineWidth = 0.8;
+        ctx.stroke();
+      }
+
+      ctx.restore();
+    });
+
+    // Render concentric optical shockwave ripples
     ripplesRef.current = ripplesRef.current.filter(r => r.alpha > 0.02);
     ripplesRef.current.forEach(r => {
       ctx.save();
       ctx.beginPath();
-      ctx.arc(r.x, r.y, r.radius, 0, Math.PI * 2);
-      ctx.strokeStyle = `rgba(255, 255, 255, ${r.alpha})`;
-      ctx.lineWidth = 1.8;
+      ctx.arc(r.x * dpr, r.y * dpr, r.radius * dpr, 0, Math.PI * 2);
+      ctx.strokeStyle = `rgba(255, 255, 255, ${r.alpha * 0.7})`;
+      ctx.lineWidth = 2.2;
+      ctx.stroke();
+
+      // Soft refraction glow ring
+      ctx.beginPath();
+      ctx.arc(r.x * dpr, r.y * dpr, Math.max(1, (r.radius - 2)) * dpr, 0, Math.PI * 2);
+      ctx.strokeStyle = `rgba(180, 225, 255, ${r.alpha * 0.4})`;
+      ctx.lineWidth = 3.5;
       ctx.stroke();
       ctx.restore();
 
-      r.radius += 3.2;
+      r.radius += 2.8;
       r.alpha *= 0.88;
     });
 
-    // 2. Draw stress fractures
-    crackBranchesRef.current.forEach(branch => {
+    // Render micro glass dust sparkles near impact
+    microSparksRef.current = microSparksRef.current.filter(sp => sp.alpha > 0.02);
+    microSparksRef.current.forEach(sp => {
       ctx.save();
-      ctx.lineCap = 'round';
-      ctx.lineJoin = 'miter';
-
-      // Outer soft glass refraction glow
       ctx.beginPath();
-      ctx.moveTo(branch.x1, branch.y1);
-      ctx.lineTo(branch.x2, branch.y2);
-      ctx.strokeStyle = 'rgba(180, 220, 255, 0.45)';
-      ctx.lineWidth = 2.4;
-      ctx.stroke();
-
-      // Sharp white fracture core
-      ctx.beginPath();
-      ctx.moveTo(branch.x1, branch.y1);
-      ctx.lineTo(branch.x2, branch.y2);
-      ctx.strokeStyle = '#ffffff';
-      ctx.lineWidth = 1.1;
-      ctx.stroke();
-
+      ctx.arc(sp.x * dpr, sp.y * dpr, sp.size * dpr, 0, Math.PI * 2);
+      ctx.fillStyle = `rgba(255, 255, 255, ${sp.alpha})`;
+      ctx.shadowColor = '#ffffff';
+      ctx.shadowBlur = 4;
+      ctx.fill();
       ctx.restore();
+
+      sp.x += sp.vx * 0.016;
+      sp.y += sp.vy * 0.016;
+      sp.vy += 220 * 0.016; // gravity
+      sp.alpha -= 0.035;
     });
 
-    if (ripplesRef.current.length > 0) {
-      animationFrameRef.current = requestAnimationFrame(drawCracksAndRipples);
+    if (ripplesRef.current.length > 0 || microSparksRef.current.length > 0) {
+      animationFrameRef.current = requestAnimationFrame(() => renderInteractiveBlock(currentCrack));
     }
   };
 
-  // Launch the true 60fps Voronoi/Delaunay glass physics shatter simulation
-  const launchShatterPhysics = (impactX, impactY, cardRect) => {
-    const canvas = canvasRef.current;
-    if (!canvas) return;
+  // Launch Three.js WebGL 3D Polygonal Shatter Simulation
+  const launchThreeShatter = (impactX, impactY) => {
+    if (!threeMountRef.current || !textureCanvasRef.current) return;
 
-    // Expand canvas to full viewport for flying shards
-    const dpr = window.devicePixelRatio || 1;
-    canvas.width = window.innerWidth * dpr;
-    canvas.height = window.innerHeight * dpr;
-    canvas.style.position = 'fixed';
-    canvas.style.inset = '0';
-    canvas.style.width = '100vw';
-    canvas.style.height = '100vh';
-    canvas.style.zIndex = '45';
+    cleanupThreeScene();
 
-    const ctx = canvas.getContext('2d');
-    ctx.scale(dpr, dpr);
+    const container = threeMountRef.current;
+    const viewWidth = window.innerWidth;
+    const viewHeight = window.innerHeight;
 
-    // Global coordinates of the impact point
-    const globalImpactX = cardRect.left + impactX;
-    const globalImpactY = cardRect.top + impactY;
+    // Three.js Scene, Camera, Renderer
+    const scene = new THREE.Scene();
+    threeSceneRef.current = scene;
 
-    // Generate 64 irregular Voronoi/radial polygonal glass shards
-    const shards = [];
-    const sectors = 16;
-    const baseAngle = (Math.PI * 2) / sectors;
-    const rings = 4; // concentric rings from center to perimeter
+    const fov = 45;
+    const fovRad = (fov * Math.PI) / 180;
+    // Camera distance where 1 unit = 1 screen pixel at Z=0
+    const cameraZ = (viewHeight / 2) / Math.tan(fovRad / 2);
 
-    const maxRadius = Math.hypot(cardRect.width, cardRect.height) * 0.65;
+    const camera = new THREE.PerspectiveCamera(fov, viewWidth / viewHeight, 1, 5000);
+    camera.position.set(0, 0, cameraZ);
+    camera.lookAt(0, 0, 0);
 
-    for (let r = 0; r < rings; r++) {
-      const rInner = (r / rings) * maxRadius;
-      const rOuter = ((r + 1) / rings) * maxRadius;
+    const renderer = new THREE.WebGLRenderer({ alpha: true, antialias: true, powerPreference: 'high-performance' });
+    threeRendererRef.current = renderer;
+    renderer.setSize(viewWidth, viewHeight);
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+    renderer.domElement.style.position = 'absolute';
+    renderer.domElement.style.inset = '0';
+    renderer.domElement.style.pointerEvents = 'none';
+    container.appendChild(renderer.domElement);
 
-      for (let s = 0; s < sectors; s++) {
-        const a1 = s * baseAngle + (Math.random() - 0.5) * 0.18;
-        const a2 = (s + 1) * baseAngle + (Math.random() - 0.5) * 0.18;
-        const midA = (a1 + a2) / 2;
+    // Card Texture
+    const cardTexture = new THREE.CanvasTexture(textureCanvasRef.current);
+    cardTexture.flipY = true;
+    cardTexture.needsUpdate = true;
 
-        const p0x = globalImpactX + Math.cos(a1) * rInner;
-        const p0y = globalImpactY + Math.sin(a1) * rInner;
-        const p1x = globalImpactX + Math.cos(a2) * rInner;
-        const p1y = globalImpactY + Math.sin(a2) * rInner;
-        const p2x = globalImpactX + Math.cos(a2) * rOuter;
-        const p2y = globalImpactY + Math.sin(a2) * rOuter;
-        const p3x = globalImpactX + Math.cos(a1) * rOuter;
-        const p3y = globalImpactY + Math.sin(a1) * rOuter;
+    // Build 3D polygonal shard meshes for all Voronoi cells
+    const cells = voronoiCellsRef.current;
+    const shardMeshes = [];
 
-        const cx = (p0x + p1x + p2x + p3x) / 4;
-        const cy = (p0y + p1y + p2y + p3y) / 4;
+    const W = CARD_WIDTH;
+    const H = CARD_HEIGHT;
 
-        // Skip shards that are far outside the initial card rectangle
-        if (
-          cx < cardRect.left - 40 ||
-          cx > cardRect.right + 40 ||
-          cy < cardRect.top - 40 ||
-          cy > cardRect.bottom + 40
-        ) {
-          continue;
-        }
+    // Material with smoked glass appearance and texture mapping
+    const shardMaterial = new THREE.MeshBasicMaterial({
+      map: cardTexture,
+      transparent: true,
+      opacity: 1.0,
+      side: THREE.DoubleSide
+    });
 
-        // Polygon points relative to center of mass
-        const poly = [
-          { x: p0x - cx, y: p0y - cy },
-          { x: p1x - cx, y: p1y - cy },
-          { x: p2x - cx, y: p2y - cy },
-          { x: p3x - cx, y: p3y - cy }
-        ];
+    // Facet edge line material for specular glints as shards rotate
+    const edgeMaterial = new THREE.LineBasicMaterial({
+      color: 0xffffff,
+      transparent: true,
+      opacity: 0.85
+    });
 
-        // Physics velocity: explosive radial push away from impact point
-        const dir = Math.atan2(cy - globalImpactY, cx - globalImpactX) + (Math.random() - 0.5) * 0.25;
-        const isInner = r <= 1;
-        const speed = (isInner ? 450 : 260) + Math.random() * 380;
+    cells.forEach((cell) => {
+      const shape = new THREE.Shape();
+      cell.vertices.forEach((v, idx) => {
+        // Invert Y because Three.js Y goes upward
+        if (idx === 0) shape.moveTo(v.x, -v.y);
+        else shape.lineTo(v.x, -v.y);
+      });
+      shape.closePath();
 
-        shards.push({
-          x: cx,
-          y: cy,
-          vx: Math.cos(dir) * speed,
-          vy: Math.sin(dir) * speed - (60 + Math.random() * 90), // upward explosive kick
-          rot: Math.random() * Math.PI * 2,
-          vrot: (Math.random() - 0.5) * 7.5,
-          alpha: 1.0,
-          scale: 1.0,
-          poly,
-          specular: Math.random() * Math.PI
-        });
+      const geom = new THREE.ShapeGeometry(shape);
+      const pos = geom.attributes.position;
+      const uv = geom.attributes.uv;
+
+      // Remap UV coordinates so texture perfectly matches the card fragment
+      for (let i = 0; i < pos.count; i++) {
+        const x = pos.getX(i);
+        const y = pos.getY(i);
+        const u = (x + W / 2) / W;
+        const v = (y + H / 2) / H;
+        uv.setXY(i, u, v);
       }
-    }
+      uv.needsUpdate = true;
 
-    // Generate 50 shimmering micro glass dust sparkle particles
-    const sparks = [];
-    for (let i = 0; i < 50; i++) {
-      const a = Math.random() * Math.PI * 2;
-      const spd = 300 + Math.random() * 550;
-      sparks.push({
-        x: globalImpactX,
-        y: globalImpactY,
-        vx: Math.cos(a) * spd,
-        vy: Math.sin(a) * spd - 40,
-        size: 1.2 + Math.random() * 2.2,
+      const mesh = new THREE.Mesh(geom, shardMaterial);
+
+      // Add faceted glass outline so edges glint sharply
+      const edgesGeom = new THREE.EdgesGeometry(geom);
+      const line = new THREE.LineSegments(edgesGeom, edgeMaterial);
+      mesh.add(line);
+
+      // Radial explosive velocity away from tap point
+      const relTapX = impactX - W / 2;
+      const relTapY = -(impactY - H / 2); // Three.js Y inverted
+
+      const dirX = cell.cx - relTapX;
+      const dirY = -cell.cy - relTapY;
+      const dist = Math.hypot(dirX, dirY) || 1;
+      const normX = dirX / dist;
+      const normY = dirY / dist;
+
+      const isInner = cell.tier === 1;
+      const speed = (isInner ? 550 : 340) + Math.random() * 420;
+
+      mesh.userData = {
+        vx: normX * speed + (Math.random() - 0.5) * 120,
+        vy: normY * speed + 80 + Math.random() * 90, // Upward explosive kick
+        vz: 120 + Math.random() * 320, // Explosive burst towards camera
+        wx: (Math.random() - 0.5) * 8.5,
+        wy: (Math.random() - 0.5) * 8.5,
+        wz: (Math.random() - 0.5) * 7.0,
+        alpha: 1.0
+      };
+
+      scene.add(mesh);
+      shardMeshes.push(mesh);
+    });
+
+    // 70+ Floating micro glass sparkle dust particles in 3D
+    const sparkCount = 70;
+    const sparkGeom = new THREE.BufferGeometry();
+    const sparkPositions = new Float32Array(sparkCount * 3);
+    const sparkVelocities = [];
+
+    const sparkOriginX = impactX - W / 2;
+    const sparkOriginY = -(impactY - H / 2);
+
+    for (let i = 0; i < sparkCount; i++) {
+      sparkPositions[i * 3] = sparkOriginX;
+      sparkPositions[i * 3 + 1] = sparkOriginY;
+      sparkPositions[i * 3 + 2] = 10;
+
+      const angle = Math.random() * Math.PI * 2;
+      const spd = 280 + Math.random() * 600;
+      sparkVelocities.push({
+        vx: Math.cos(angle) * spd,
+        vy: Math.sin(angle) * spd + 40,
+        vz: 100 + Math.random() * 350,
         alpha: 1.0
       });
     }
 
-    let lastTime = performance.now();
+    sparkGeom.setAttribute('position', new THREE.BufferAttribute(sparkPositions, 3));
+    const sparkMaterial = new THREE.PointsMaterial({
+      color: 0xffffff,
+      size: 3.5,
+      transparent: true,
+      opacity: 0.95,
+      blending: THREE.AdditiveBlending
+    });
+    const sparkPoints = new THREE.Points(sparkGeom, sparkMaterial);
+    scene.add(sparkPoints);
 
-    const renderPhysicsFrame = (time) => {
+    let lastTime = performance.now();
+    let cameraPushProgress = 0;
+
+    // 60fps Physical Simulation Loop
+    const animateSimulation = (time) => {
       const dt = Math.min(0.033, (time - lastTime) / 1000);
       lastTime = time;
 
-      ctx.clearRect(0, 0, window.innerWidth, window.innerHeight);
+      // 1. Update 3D Shards
+      let anyShardAlive = false;
+      shardMeshes.forEach((mesh) => {
+        const u = mesh.userData;
+        if (u.alpha <= 0.01) return;
+        anyShardAlive = true;
 
-      // Render & update shards
-      let anyAlive = false;
-      shards.forEach(s => {
-        if (s.alpha <= 0.01) return;
-        anyAlive = true;
+        // Position & gravity update
+        mesh.position.x += u.vx * dt;
+        mesh.position.y += u.vy * dt;
+        mesh.position.z += u.vz * dt;
 
-        // Physics update
-        s.x += s.vx * dt;
-        s.y += s.vy * dt;
-        s.vy += 920 * dt; // Realistic gravitational pull downward
-        s.vx *= 0.988;    // Air drag
-        s.vy *= 0.992;
-        s.rot += s.vrot * dt;
-        s.alpha -= dt * 0.85; // Smooth fade over ~1.1s
-        s.specular += dt * 3.5;
+        u.vy -= 1050 * dt; // Gravitational acceleration downward
+        u.vx *= 0.988;     // Air drag
+        u.vz *= 0.985;
 
-        // Render shard polygon
-        ctx.save();
-        ctx.translate(s.x, s.y);
-        ctx.rotate(s.rot);
+        // 3D Tumbling rotation
+        mesh.rotation.x += u.wx * dt;
+        mesh.rotation.y += u.wy * dt;
+        mesh.rotation.z += u.wz * dt;
 
-        ctx.beginPath();
-        s.poly.forEach((pt, idx) => {
-          if (idx === 0) ctx.moveTo(pt.x, pt.y);
-          else ctx.lineTo(pt.x, pt.y);
-        });
-        ctx.closePath();
-
-        // Smoked translucent glass fill
-        ctx.fillStyle = `rgba(32, 38, 50, ${Math.max(0, s.alpha * 0.88)})`;
-        ctx.fill();
-
-        // Faceted specular glint edge
-        const glint = Math.sin(s.specular);
-        const strokeAlpha = Math.max(0, s.alpha * (0.55 + 0.35 * glint));
-        ctx.strokeStyle = `rgba(255, 255, 255, ${strokeAlpha})`;
-        ctx.lineWidth = 1.1;
-        ctx.stroke();
-
-        ctx.restore();
+        // Smooth fade out as shards fly past
+        u.alpha -= dt * 0.78;
+        if (mesh.material) {
+          mesh.material.opacity = Math.max(0, u.alpha);
+        }
       });
 
-      // Render & update sparkle dust
-      sparks.forEach(sp => {
-        if (sp.alpha <= 0.02) return;
-        sp.x += sp.vx * dt;
-        sp.y += sp.vy * dt;
-        sp.vy += 450 * dt;
-        sp.alpha -= dt * 1.2;
+      // 2. Update Sparkle Dust
+      const positions = sparkGeom.attributes.position.array;
+      for (let i = 0; i < sparkCount; i++) {
+        const sp = sparkVelocities[i];
+        if (sp.alpha <= 0.01) continue;
 
-        ctx.beginPath();
-        ctx.arc(sp.x, sp.y, sp.size, 0, Math.PI * 2);
-        ctx.fillStyle = `rgba(255, 255, 255, ${Math.max(0, sp.alpha * 0.9)})`;
-        ctx.shadowColor = '#ffffff';
-        ctx.shadowBlur = 6;
-        ctx.fill();
-      });
+        positions[i * 3] += sp.vx * dt;
+        positions[i * 3 + 1] += sp.vy * dt;
+        positions[i * 3 + 2] += sp.vz * dt;
 
-      if (anyAlive) {
-        animationFrameRef.current = requestAnimationFrame(renderPhysicsFrame);
+        sp.vy -= 500 * dt;
+        sp.vx *= 0.985;
+        sp.vz *= 0.985;
+        sp.alpha -= dt * 0.95;
+      }
+      sparkGeom.attributes.position.needsUpdate = true;
+      sparkMaterial.opacity = Math.max(0, sparkMaterial.opacity - dt * 0.65);
+
+      // 3. Cinematic Camera Push forward through the broken glass
+      cameraPushProgress = Math.min(1.0, cameraPushProgress + dt * 1.1);
+      const pushEase = gsap.parseEase('power2.out')(cameraPushProgress);
+      camera.position.z = cameraZ - pushEase * 320;
+
+      renderer.render(scene, camera);
+
+      if (anyShardAlive) {
+        animationFrameRef.current = requestAnimationFrame(animateSimulation);
       }
     };
 
-    animationFrameRef.current = requestAnimationFrame(renderPhysicsFrame);
+    animationFrameRef.current = requestAnimationFrame(animateSimulation);
   };
 
   // Handle User Clicking / Tapping the Physical Glass Block
@@ -404,91 +804,110 @@ export default function CalmModeOverlay({ isActive, block, blockName, totalTasks
     e.stopPropagation();
     if (phase !== 'break') return;
 
-    const rect = blockCardRef.current?.getBoundingClientRect();
+    const rect = interactiveCanvasRef.current?.getBoundingClientRect();
     if (!rect) return;
 
-    const clickX = e.clientX - rect.left;
-    const clickY = e.clientY - rect.top;
+    const clickX = Math.max(0, Math.min(CARD_WIDTH, e.clientX - rect.left));
+    const clickY = Math.max(0, Math.min(CARD_HEIGHT, e.clientY - rect.top));
+    impactCoordsRef.current = { x: clickX, y: clickY };
 
     const nextCrack = crackCount + 1;
 
     if (nextCrack === 1) {
-      // HIT 1: Subtle impact ripple, tiny realistic stress fracture, short vibration
+      // HIT 1: Real impact reaction, internal stress fracture, optical ripple, short vibration
       sound.playGlassCrack(1);
       navigator.vibrate?.(25);
       setCrackCount(1);
 
-      // Add ripple shockwave
-      ripplesRef.current.push({ x: clickX, y: clickY, radius: 4, alpha: 0.85 });
+      // Partition card into Voronoi cells centered on tap point
+      voronoiCellsRef.current = generateVoronoiCells(CARD_WIDTH, CARD_HEIGHT, clickX, clickY);
 
-      // Add 4-5 fine hairline fractures
-      for (let i = 0; i < 5; i++) {
-        const angle = (i * (Math.PI * 2) / 5) + (Math.random() - 0.5) * 0.3;
-        const branch = generateCrackBranch(clickX, clickY, angle, 3, 14);
-        crackBranchesRef.current.push(...branch);
+      // Optical shockwave ripple
+      ripplesRef.current.push({ x: clickX, y: clickY, radius: 6, alpha: 0.9 });
+
+      // 15 microscopic glass crystal sparks
+      for (let i = 0; i < 15; i++) {
+        const a = Math.random() * Math.PI * 2;
+        const spd = 60 + Math.random() * 140;
+        microSparksRef.current.push({
+          x: clickX,
+          y: clickY,
+          vx: Math.cos(a) * spd,
+          vy: Math.sin(a) * spd - 30,
+          size: 1.0 + Math.random() * 1.5,
+          alpha: 1.0
+        });
       }
 
-      drawCracksAndRipples();
+      renderInteractiveBlock(1);
 
-      // Micro-recoil spring
-      gsap.fromTo(blockCardRef.current,
+      // Micro-recoil spring deformation
+      gsap.fromTo(blockCardWrapperRef.current,
         { scale: 0.96, rotate: (Math.random() - 0.5) * 1.2 },
         { scale: 1, rotate: 0, duration: 0.35, ease: 'elastic.out(1.2, 0.4)' }
       );
     } else if (nextCrack === 2) {
-      // HIT 2: Deep branching glass fractures, surface flexes, stronger feedback
+      // HIT 2: Branching fractures spread, glass visually separates along boundaries, stronger feedback
       sound.playGlassCrack(2);
       navigator.vibrate?.([30, 40]);
       setCrackCount(2);
 
-      ripplesRef.current.push({ x: clickX, y: clickY, radius: 6, alpha: 0.95 });
+      // Second optical ripple
+      ripplesRef.current.push({ x: clickX, y: clickY, radius: 8, alpha: 0.95 });
 
-      // Add 8-10 major fractures propagating outwards to edges
-      for (let i = 0; i < 8; i++) {
-        const angle = (i * (Math.PI * 2) / 8) + (Math.random() - 0.5) * 0.4;
-        const branch = generateCrackBranch(clickX, clickY, angle, 5, 22);
-        crackBranchesRef.current.push(...branch);
+      // 25 micro-glass crystal sparks
+      for (let i = 0; i < 25; i++) {
+        const a = Math.random() * Math.PI * 2;
+        const spd = 90 + Math.random() * 210;
+        microSparksRef.current.push({
+          x: clickX,
+          y: clickY,
+          vx: Math.cos(a) * spd,
+          vy: Math.sin(a) * spd - 40,
+          size: 1.2 + Math.random() * 1.8,
+          alpha: 1.0
+        });
       }
 
-      drawCracksAndRipples();
+      renderInteractiveBlock(2);
 
       // Surface flex vibration
       gsap.timeline()
-        .to(blockCardRef.current, { scale: 0.93, duration: 0.05 })
-        .to(blockCardRef.current, { x: -5, rotate: -1.5, duration: 0.04 })
-        .to(blockCardRef.current, { x: 5, rotate: 1.5, duration: 0.04 })
-        .to(blockCardRef.current, { x: -2, duration: 0.04 })
-        .to(blockCardRef.current, { scale: 1, x: 0, rotate: 0, duration: 0.35, ease: 'elastic.out(1.1, 0.35)' });
+        .to(blockCardWrapperRef.current, { scale: 0.93, duration: 0.05 })
+        .to(blockCardWrapperRef.current, { x: -5, rotate: -1.6, duration: 0.04 })
+        .to(blockCardWrapperRef.current, { x: 5, rotate: 1.6, duration: 0.04 })
+        .to(blockCardWrapperRef.current, { x: -2, duration: 0.04 })
+        .to(blockCardWrapperRef.current, { scale: 1, x: 0, rotate: 0, duration: 0.35, ease: 'elastic.out(1.1, 0.35)' });
     } else if (nextCrack >= 3) {
-      // FINAL HIT: Entire block genuinely shatters into physics shards -> Boom transition
+      // FINAL HIT: Entire block physically shatters into Three.js 3D polygonal shards -> Cinematic transition
       sound.playGlassShatter();
       navigator.vibrate?.([40, 60, 85]);
       setPhase('shattering');
 
-      // Hide the DOM block card so only the flying physics shards exist
-      if (blockCardRef.current) {
-        blockCardRef.current.style.opacity = '0';
-        blockCardRef.current.style.pointerEvents = 'none';
+      // Hide the intact 2D card so only the 3D flying shards exist
+      if (blockCardWrapperRef.current) {
+        blockCardWrapperRef.current.style.opacity = '0';
+        blockCardWrapperRef.current.style.pointerEvents = 'none';
       }
 
-      // Launch genuine 60fps Voronoi physics shatter
-      launchShatterPhysics(clickX, clickY, rect);
+      // Launch genuine Three.js WebGL physics shatter
+      launchThreeShatter(clickX, clickY);
 
-      // Camera push / cinematic boom zoom
+      // Cinematic boom push
       if (rootContainerRef.current) {
         gsap.to(rootContainerRef.current, {
-          scale: 1.05,
+          scale: 1.04,
           duration: 1.2,
           ease: 'power2.out'
         });
       }
 
-      // Transition smoothly to full peaceful Zen environment
+      // Transition seamlessly to full peaceful Zen environment
       setTimeout(() => {
         setPhase('zen');
         const stopFn = sound.playSoothingCalmMusic();
         stopMusicRef.current = stopFn;
-      }, 700);
+      }, 750);
     }
   };
 
@@ -522,17 +941,16 @@ export default function CalmModeOverlay({ isActive, block, blockName, totalTasks
   if (!isActive) return null;
 
   const currentScene = ZEN_SCENES[currentSceneIndex];
-  const displayName = blockName || block?.name || 'Completed Block';
 
   return (
-    <div 
+    <div
       ref={rootContainerRef}
       className="fixed inset-0 z-50 flex items-center justify-center select-none overflow-hidden bg-black transition-transform duration-700 ease-out"
       onClick={phase === 'zen' ? handleExit : undefined}
     >
       {/* ========================================================
-          BACKGROUND 4K CINEMATIC NATURE/SPACE VIDEO
-          Preloaded silently; smoothly emerges on shatter transition
+          BACKGROUND 4K CINEMATIC NATURE / COSMIC VIDEO
+          Looping seamlessly; softly revealed behind the shattered glass
           ======================================================== */}
       <video
         ref={videoRef}
@@ -551,17 +969,31 @@ export default function CalmModeOverlay({ isActive, block, blockName, totalTasks
       />
 
       {/* Atmospheric Soft Dark Scrim Overlay for Readability */}
-      <div 
+      <div
         className={`absolute inset-0 pointer-events-none transition-opacity duration-1000 ${
-          phase === 'zen' ? 'bg-gradient-to-b from-black/50 via-black/35 to-black/70 opacity-100' : 'bg-black opacity-100'
+          phase === 'zen' ? 'bg-gradient-to-b from-black/55 via-black/35 to-black/75 opacity-100' : 'bg-black opacity-100'
         }`}
       />
 
       {/* Soft Light Bloom Expanding from Shatter Epicenter */}
-      <div 
+      <div
         className={`absolute inset-0 pointer-events-none transition-opacity duration-700 ${
-          phase === 'shattering' ? 'opacity-60 bg-[radial-gradient(circle_at_center,rgba(255,255,255,0.45)_0%,transparent_65%)]' : 'opacity-0'
+          phase === 'shattering' ? 'opacity-70 bg-[radial-gradient(circle_at_center,rgba(255,255,255,0.45)_0%,transparent_65%)]' : 'opacity-0'
         }`}
+      />
+
+      {/* ========================================================
+          THREE.JS WEBGL FULLSCREEN CONTAINER FOR 3D SHATTER
+          ======================================================== */}
+      <div
+        ref={threeMountRef}
+        className="fixed inset-0 pointer-events-none z-30 overflow-hidden"
+      />
+
+      {/* Offscreen Canvas for High-DPI Card Texture Generation */}
+      <canvas
+        ref={textureCanvasRef}
+        className="hidden"
       />
 
       {/* ========================================================
@@ -570,7 +1002,7 @@ export default function CalmModeOverlay({ isActive, block, blockName, totalTasks
       {phase !== 'zen' && (
         <div className="relative z-20 flex flex-col items-center justify-center px-4 w-full max-w-lg">
           {/* Header Typography */}
-          <div className="flex flex-col items-center text-center mb-8 pointer-events-none animate-modal-in">
+          <div className="flex flex-col items-center text-center mb-7 pointer-events-none animate-modal-in">
             <span className="text-[11px] sm:text-xs font-mono uppercase tracking-[0.28em] text-emerald-400 font-semibold mb-2 drop-shadow-sm">
               YOU COMPLETED THIS BLOCK
             </span>
@@ -582,14 +1014,12 @@ export default function CalmModeOverlay({ isActive, block, blockName, totalTasks
           {/* The Single Premium Rounded Glass Block Container */}
           <div className="relative flex items-center justify-center">
             <div
-              ref={blockCardRef}
+              ref={blockCardWrapperRef}
               onClick={handleBlockClick}
-              className="relative group w-[290px] sm:w-[330px] rounded-[26px] p-6 cursor-pointer select-none transition-transform duration-150 active:scale-[0.98] overflow-hidden"
+              className="relative group cursor-pointer select-none transition-transform duration-150 active:scale-[0.98] rounded-[26px] overflow-hidden"
               style={{
-                background: 'linear-gradient(145deg, rgba(32, 36, 46, 0.75) 0%, rgba(14, 16, 22, 0.90) 100%)',
-                backdropFilter: 'blur(32px) saturate(190%)',
-                WebkitBackdropFilter: 'blur(32px) saturate(190%)',
-                border: '1px solid rgba(255, 255, 255, 0.22)',
+                width: `${CARD_WIDTH}px`,
+                height: `${CARD_HEIGHT}px`,
                 boxShadow: `
                   0 30px 60px -12px rgba(0, 0, 0, 0.85),
                   0 12px 24px -6px rgba(0, 0, 0, 0.65),
@@ -598,49 +1028,15 @@ export default function CalmModeOverlay({ isActive, block, blockName, totalTasks
                 `
               }}
             >
-              {/* Diagonal Specular Highlight Across Glass Surface */}
-              <div 
-                className="absolute inset-0 rounded-[26px] pointer-events-none opacity-30"
-                style={{
-                  background: 'linear-gradient(135deg, rgba(255,255,255,0.4) 0%, transparent 40%, rgba(255,255,255,0.06) 60%, transparent 100%)'
-                }}
-              />
-
-              {/* Status Header inside Glass Block */}
-              <div className="flex items-center justify-between mb-4">
-                <div className="flex items-center gap-2">
-                  <span className="w-2 h-2 rounded-full bg-emerald-400 shadow-[0_0_8px_rgba(52,211,153,0.9)] animate-pulse" />
-                  <span className="text-[11px] font-mono tracking-widest text-emerald-400 uppercase font-semibold">
-                    COMPLETED
-                  </span>
-                </div>
-                <div className="w-5 h-5 rounded-full bg-emerald-500/20 border border-emerald-500/40 flex items-center justify-center text-emerald-300">
-                  <Check className="w-3 h-3 stroke-[3]" />
-                </div>
-              </div>
-
-              {/* Block Title */}
-              <h3 className="text-xl sm:text-2xl font-semibold text-white tracking-wide truncate mb-5 drop-shadow-md">
-                {displayName}
-              </h3>
-
-              {/* 100% Golden-Emerald Progress Bar */}
-              <div className="w-full">
-                <div className="w-full h-2 rounded-full bg-black/40 overflow-hidden border border-white/10 p-[1px]">
-                  <div className="w-full h-full rounded-full bg-gradient-to-r from-emerald-400 via-teal-300 to-amber-300 shadow-[0_0_12px_rgba(52,211,153,0.8)]" />
-                </div>
-                <div className="flex justify-between items-center mt-2 text-[11px] font-mono text-white/50">
-                  <span>100% DONE</span>
-                  {totalTasks > 0 && <span>{totalTasks} / {totalTasks} TASKS</span>}
-                </div>
-              </div>
-
-              {/* Canvas Overlay for Realistic Dynamic Cracks & Ripples */}
+              {/* Interactive High-DPI Glass Card Canvas */}
               <canvas
-                ref={canvasRef}
-                width={330}
-                height={200}
-                className="absolute inset-0 w-full h-full pointer-events-none rounded-[26px]"
+                ref={interactiveCanvasRef}
+                style={{
+                  width: `${CARD_WIDTH}px`,
+                  height: `${CARD_HEIGHT}px`,
+                  display: 'block'
+                }}
+                className="rounded-[26px] pointer-events-auto"
               />
             </div>
           </div>
@@ -662,7 +1058,7 @@ export default function CalmModeOverlay({ isActive, block, blockName, totalTasks
           ======================================================== */}
       {phase === 'zen' && (
         <div className="relative z-20 flex flex-col items-center justify-center text-center px-6 max-w-2xl pointer-events-auto animate-fade-in">
-          {/* Calming Quote (Randomly Selected) */}
+          {/* Calming Quote (Randomly Selected from the 4 requested) */}
           <h2 className="text-3xl sm:text-4xl md:text-5xl font-extralight tracking-wide text-white drop-shadow-[0_4px_30px_rgba(0,0,0,0.95)] leading-relaxed sm:leading-snug mb-6">
             "{zenMessage}"
           </h2>
