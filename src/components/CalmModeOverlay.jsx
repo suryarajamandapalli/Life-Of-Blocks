@@ -2,64 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import gsap from 'gsap';
 import * as THREE from 'three';
 import { sound } from '../services/sound';
-
-// Verified 4K / 1080p Cinematic Zen Environment Videos (Rain, Beach, Deep Space, Ocean, Forest, Snow, Clouds)
-const ZEN_SCENES = [
-  {
-    id: 'rain_water',
-    name: 'Peaceful Rain',
-    url: 'https://raw.githubusercontent.com/developedbyed/meditation-app/master/video/rain.mp4',
-    poster: 'https://images.unsplash.com/photo-1534088568595-a066f410bcda?q=85&w=2560&auto=format&fit=crop'
-  },
-  {
-    id: 'calm_beach',
-    name: 'Calm Ocean Surf',
-    url: 'https://raw.githubusercontent.com/developedbyed/meditation-app/master/video/beach.mp4',
-    poster: 'https://images.unsplash.com/photo-1507525428034-b723cf961d3e?q=85&w=2560&auto=format&fit=crop'
-  },
-  {
-    id: 'deep_space_orion',
-    name: 'Orion Nebula Space',
-    url: 'https://images-assets.nasa.gov/video/JPL-20221122-SOLSYSf-0001-Orion%20Dust%20and%20Death/JPL-20221122-SOLSYSf-0001-Orion%20Dust%20and%20Death~mobile.mp4',
-    poster: 'https://images.unsplash.com/photo-1502134249126-9f3755a50d78?q=85&w=2560&auto=format&fit=crop'
-  },
-  {
-    id: 'forest_mist',
-    name: 'Forest Mist & Stream',
-    url: 'https://mdbootstrap.com/img/video/forest.mp4',
-    poster: 'https://images.unsplash.com/photo-1448375240586-882707db888b?q=85&w=2560&auto=format&fit=crop'
-  },
-  {
-    id: 'tropical_shore',
-    name: 'Tropical Shoreline',
-    url: 'https://mdbootstrap.com/img/video/Tropical.mp4',
-    poster: 'https://images.unsplash.com/photo-1505118380757-91f5f5632de0?q=85&w=2560&auto=format&fit=crop'
-  },
-  {
-    id: 'falling_snow',
-    name: 'Winter Falling Snow',
-    url: 'https://raw.githubusercontent.com/mawaqit/mobile-assets/main/weather-videos/snow.mp4',
-    poster: 'https://images.unsplash.com/photo-1517299321929-30a7063a34db?q=85&w=2560&auto=format&fit=crop'
-  },
-  {
-    id: 'mountain_clouds',
-    name: 'Mountain Clouds',
-    url: 'https://raw.githubusercontent.com/mawaqit/mobile-assets/main/weather-videos/cloudy.mp4',
-    poster: 'https://images.unsplash.com/photo-1464822759023-fed622ff2c3b?q=85&w=2560&auto=format&fit=crop'
-  },
-  {
-    id: 'deep_cosmos',
-    name: 'Cosmic Starfield',
-    url: 'https://images-assets.nasa.gov/video/JPL-20231222-SOLSYSf-0001-NASA%20Telescopes%20Reveal%20Hidden%20Universe/JPL-20231222-SOLSYSf-0001-NASA%20Telescopes%20Reveal%20Hidden%20Universe~mobile.mp4',
-    poster: 'https://images.unsplash.com/photo-1451187580459-43490279c0fa?q=85&w=2560&auto=format&fit=crop'
-  },
-  {
-    id: 'rain_window',
-    name: 'Rain on Window',
-    url: 'https://raw.githubusercontent.com/mawaqit/mobile-assets/main/weather-videos/rain.mp4',
-    poster: 'https://images.unsplash.com/photo-1515694346937-94d85e41e6f0?q=85&w=2560&auto=format&fit=crop'
-  }
-];
+import { pixabayService, CURATED_PIXABAY_VIDEOS } from '../services/pixabayVideo';
 
 // Meaningful, peaceful completion copy randomly selected
 const ZEN_MESSAGES = [
@@ -125,7 +68,6 @@ function clipPolygonWithBisector(poly, pi, pj) {
 function generateVoronoiCells(W, H, tapX, tapY) {
   const halfW = W / 2;
   const halfH = H / 2;
-  // Center coordinates relative to card center (0, 0)
   const relX = tapX - halfW;
   const relY = tapY - halfH;
 
@@ -241,7 +183,6 @@ function renderCardTexture(canvas, { displayName, totalTasks = 0, width = CARD_W
 
   // 4. Status Indicator (Top Left: Emerald Glow Dot + COMPLETED)
   ctx.save();
-  // Dot Glow
   const glow = ctx.createRadialGradient(28, 28, 0, 28, 28, 10);
   glow.addColorStop(0, 'rgba(52, 211, 153, 0.9)');
   glow.addColorStop(1, 'rgba(52, 211, 153, 0)');
@@ -250,13 +191,11 @@ function renderCardTexture(canvas, { displayName, totalTasks = 0, width = CARD_W
   ctx.arc(28, 28, 10, 0, Math.PI * 2);
   ctx.fill();
 
-  // Solid Center Dot
   ctx.fillStyle = '#34d399';
   ctx.beginPath();
   ctx.arc(28, 28, 3.5, 0, Math.PI * 2);
   ctx.fill();
 
-  // Status Label Text
   ctx.font = '600 11px ui-monospace, monospace';
   ctx.fillStyle = '#34d399';
   ctx.fillText('COMPLETED', 44, 32);
@@ -274,7 +213,6 @@ function renderCardTexture(canvas, { displayName, totalTasks = 0, width = CARD_W
   ctx.lineWidth = 1.2;
   ctx.stroke();
 
-  // Checkmark icon stroke
   ctx.beginPath();
   ctx.moveTo(checkX - 4.5, checkY - 0.5);
   ctx.lineTo(checkX - 1.2, checkY + 3.2);
@@ -294,7 +232,6 @@ function renderCardTexture(canvas, { displayName, totalTasks = 0, width = CARD_W
   ctx.shadowBlur = 10;
   ctx.shadowOffsetY = 2;
 
-  // Truncate title if too long for card
   let title = displayName || 'Completed Block';
   if (ctx.measureText(title).width > width - 56) {
     while (title.length > 3 && ctx.measureText(title + '...').width > width - 56) {
@@ -310,7 +247,6 @@ function renderCardTexture(canvas, { displayName, totalTasks = 0, width = CARD_W
   const barW = width - 48;
   const barH = 9;
 
-  // Track background
   ctx.save();
   ctx.beginPath();
   if (ctx.roundRect) ctx.roundRect(24, barY, barW, barH, 4.5);
@@ -321,11 +257,10 @@ function renderCardTexture(canvas, { displayName, totalTasks = 0, width = CARD_W
   ctx.lineWidth = 1;
   ctx.stroke();
 
-  // 100% Glowing Gradient Fill
   const barGrad = ctx.createLinearGradient(24, 0, 24 + barW, 0);
-  barGrad.addColorStop(0, '#34d399'); // emerald
-  barGrad.addColorStop(0.5, '#2dd4bf'); // teal
-  barGrad.addColorStop(1, '#fcd34d'); // gold
+  barGrad.addColorStop(0, '#34d399');
+  barGrad.addColorStop(0.5, '#2dd4bf');
+  barGrad.addColorStop(1, '#fcd34d');
   ctx.beginPath();
   if (ctx.roundRect) ctx.roundRect(25, barY + 1, barW - 2, barH - 2, 3.5);
   else ctx.rect(25, barY + 1, barW - 2, barH - 2);
@@ -353,7 +288,8 @@ export default function CalmModeOverlay({ isActive, block, blockName, totalTasks
   // Experience phases: 'break' -> 'shattering' -> 'zen'
   const [phase, setPhase] = useState('break');
   const [crackCount, setCrackCount] = useState(0); // 0 -> 1 -> 2 -> 3 (triggers Three.js shatter)
-  const [currentSceneIndex, setCurrentSceneIndex] = useState(0);
+  const [zenVideos, setZenVideos] = useState(CURATED_PIXABAY_VIDEOS);
+  const [currentVideoIndex, setCurrentVideoIndex] = useState(0);
   const [zenMessage, setZenMessage] = useState(() => ZEN_MESSAGES[0]);
 
   const rootContainerRef = useRef(null);
@@ -375,8 +311,20 @@ export default function CalmModeOverlay({ isActive, block, blockName, totalTasks
   // Three.js instances
   const threeSceneRef = useRef(null);
   const threeRendererRef = useRef(null);
+  const shardMeshesRef = useRef([]);
 
   const displayName = blockName || block?.name || 'Completed Block';
+
+  // Load and cache Pixabay 4K videos on mount
+  useEffect(() => {
+    let isMounted = true;
+    pixabayService.getAllZenVideos().then(vids => {
+      if (isMounted && Array.isArray(vids) && vids.length > 0) {
+        setZenVideos(vids);
+      }
+    });
+    return () => { isMounted = false; };
+  }, []);
 
   // Initialize and Reset on Modal Activation
   useEffect(() => {
@@ -388,9 +336,11 @@ export default function CalmModeOverlay({ isActive, block, blockName, totalTasks
     voronoiCellsRef.current = [];
     ripplesRef.current = [];
     microSparksRef.current = [];
+    shardMeshesRef.current = [];
 
-    // Select random background scene & calm message
-    setCurrentSceneIndex(Math.floor(Math.random() * ZEN_SCENES.length));
+    // Select random background video & calm message
+    const vidList = zenVideos.length > 0 ? zenVideos : CURATED_PIXABAY_VIDEOS;
+    setCurrentVideoIndex(Math.floor(Math.random() * vidList.length));
     const randomMsg = ZEN_MESSAGES[Math.floor(Math.random() * ZEN_MESSAGES.length)];
     setZenMessage(randomMsg);
 
@@ -412,7 +362,6 @@ export default function CalmModeOverlay({ isActive, block, blockName, totalTasks
         dpr: 2
       });
 
-      // Paint pristine card onto interactive display canvas
       const displayCanvas = interactiveCanvasRef.current;
       displayCanvas.width = CARD_WIDTH * 2;
       displayCanvas.height = CARD_HEIGHT * 2;
@@ -432,9 +381,9 @@ export default function CalmModeOverlay({ isActive, block, blockName, totalTasks
       }
       cleanupThreeScene();
     };
-  }, [isActive, displayName, totalTasks]);
+  }, [isActive, displayName, totalTasks, zenVideos]);
 
-  // Clean up Three.js WebGL scene
+  // Clean up Three.js WebGL scene completely
   const cleanupThreeScene = () => {
     if (threeSceneRef.current) {
       threeSceneRef.current.traverse((obj) => {
@@ -446,6 +395,7 @@ export default function CalmModeOverlay({ isActive, block, blockName, totalTasks
       });
       threeSceneRef.current = null;
     }
+    shardMeshesRef.current = [];
     if (threeRendererRef.current) {
       threeRendererRef.current.dispose();
       if (threeRendererRef.current.domElement && threeRendererRef.current.domElement.parentNode) {
@@ -455,16 +405,16 @@ export default function CalmModeOverlay({ isActive, block, blockName, totalTasks
     }
   };
 
-  // Rotate cinematic background scenes smoothly during Zen Mode
+  // Rotate Pixabay background videos smoothly during Zen Mode
   useEffect(() => {
     if (!isActive || phase !== 'zen') return;
 
     const interval = setInterval(() => {
-      setCurrentSceneIndex(prev => (prev + 1) % ZEN_SCENES.length);
-    }, 14000);
+      setCurrentVideoIndex(prev => (prev + 1) % (zenVideos.length || 1));
+    }, 15000);
 
     return () => clearInterval(interval);
-  }, [isActive, phase]);
+  }, [isActive, phase, zenVideos]);
 
   // Draw the physical glass block with internal optical fissures, refraction, and shockwaves
   const renderInteractiveBlock = (currentCrack) => {
@@ -487,8 +437,6 @@ export default function CalmModeOverlay({ isActive, block, blockName, totalTasks
     }
 
     // For Hit 1 & Hit 2: Render cells with genuine physical displacement and cleavage
-    // Hit 1: Tier 1 cells offset by 0.6px
-    // Hit 2: Tier 1 cells offset by 1.8px, Tier 2 cells offset by 0.9px (visual physical separation)
     cells.forEach(cell => {
       let offsetDist = 0;
       if (currentCrack === 1) {
@@ -544,7 +492,6 @@ export default function CalmModeOverlay({ isActive, block, blockName, totalTasks
       ctx.lineWidth = 2.2;
       ctx.stroke();
 
-      // Soft refraction glow ring
       ctx.beginPath();
       ctx.arc(r.x * dpr, r.y * dpr, Math.max(1, (r.radius - 2)) * dpr, 0, Math.PI * 2);
       ctx.strokeStyle = `rgba(180, 225, 255, ${r.alpha * 0.4})`;
@@ -570,7 +517,7 @@ export default function CalmModeOverlay({ isActive, block, blockName, totalTasks
 
       sp.x += sp.vx * 0.016;
       sp.y += sp.vy * 0.016;
-      sp.vy += 220 * 0.016; // gravity
+      sp.vy += 220 * 0.016;
       sp.alpha -= 0.035;
     });
 
@@ -579,7 +526,7 @@ export default function CalmModeOverlay({ isActive, block, blockName, totalTasks
     }
   };
 
-  // Launch Three.js WebGL 3D Polygonal Shatter Simulation
+  // Launch Three.js WebGL 3D Polygonal Shatter Simulation (Instant 60fps, 0 Floating Remnants)
   const launchThreeShatter = (impactX, impactY) => {
     if (!threeMountRef.current || !textureCanvasRef.current) return;
 
@@ -595,7 +542,6 @@ export default function CalmModeOverlay({ isActive, block, blockName, totalTasks
 
     const fov = 45;
     const fovRad = (fov * Math.PI) / 180;
-    // Camera distance where 1 unit = 1 screen pixel at Z=0
     const cameraZ = (viewHeight / 2) / Math.tan(fovRad / 2);
 
     const camera = new THREE.PerspectiveCamera(fov, viewWidth / viewHeight, 1, 5000);
@@ -609,6 +555,7 @@ export default function CalmModeOverlay({ isActive, block, blockName, totalTasks
     renderer.domElement.style.position = 'absolute';
     renderer.domElement.style.inset = '0';
     renderer.domElement.style.pointerEvents = 'none';
+    renderer.domElement.style.transition = 'opacity 0.4s ease-out';
     container.appendChild(renderer.domElement);
 
     // Card Texture
@@ -623,27 +570,17 @@ export default function CalmModeOverlay({ isActive, block, blockName, totalTasks
     const W = CARD_WIDTH;
     const H = CARD_HEIGHT;
 
-    // Material with smoked glass appearance and texture mapping
-    const shardMaterial = new THREE.MeshBasicMaterial({
-      map: cardTexture,
-      transparent: true,
-      opacity: 1.0,
-      side: THREE.DoubleSide
-    });
-
-    // Facet edge line material for specular glints as shards rotate
-    const edgeMaterial = new THREE.LineBasicMaterial({
-      color: 0xffffff,
-      transparent: true,
-      opacity: 0.85
-    });
+    const relTapX = impactX - W / 2;
+    const relTapY = -(impactY - H / 2);
 
     cells.forEach((cell) => {
       const shape = new THREE.Shape();
+      const loopPoints = [];
+
       cell.vertices.forEach((v, idx) => {
-        // Invert Y because Three.js Y goes upward
         if (idx === 0) shape.moveTo(v.x, -v.y);
         else shape.lineTo(v.x, -v.y);
+        loopPoints.push(new THREE.Vector3(v.x, -v.y, 1));
       });
       shape.closePath();
 
@@ -651,7 +588,6 @@ export default function CalmModeOverlay({ isActive, block, blockName, totalTasks
       const pos = geom.attributes.position;
       const uv = geom.attributes.uv;
 
-      // Remap UV coordinates so texture perfectly matches the card fragment
       for (let i = 0; i < pos.count; i++) {
         const x = pos.getX(i);
         const y = pos.getY(i);
@@ -661,17 +597,27 @@ export default function CalmModeOverlay({ isActive, block, blockName, totalTasks
       }
       uv.needsUpdate = true;
 
+      // Each shard gets independent material with controlled opacity
+      const shardMaterial = new THREE.MeshBasicMaterial({
+        map: cardTexture,
+        transparent: true,
+        opacity: 1.0,
+        side: THREE.DoubleSide
+      });
+
       const mesh = new THREE.Mesh(geom, shardMaterial);
 
-      // Add faceted glass outline so edges glint sharply
-      const edgesGeom = new THREE.EdgesGeometry(geom);
-      const line = new THREE.LineSegments(edgesGeom, edgeMaterial);
+      // Lightweight LineLoop outline: 100x faster than EdgesGeometry, smooth 60fps
+      const lineGeom = new THREE.BufferGeometry().setFromPoints(loopPoints);
+      const lineMaterial = new THREE.LineBasicMaterial({
+        color: 0xffffff,
+        transparent: true,
+        opacity: 0.85
+      });
+      const line = new THREE.LineLoop(lineGeom, lineMaterial);
       mesh.add(line);
 
-      // Radial explosive velocity away from tap point
-      const relTapX = impactX - W / 2;
-      const relTapY = -(impactY - H / 2); // Three.js Y inverted
-
+      // Fast explosive outward burst from tap point
       const dirX = cell.cx - relTapX;
       const dirY = -cell.cy - relTapY;
       const dist = Math.hypot(dirX, dirY) || 1;
@@ -679,15 +625,16 @@ export default function CalmModeOverlay({ isActive, block, blockName, totalTasks
       const normY = dirY / dist;
 
       const isInner = cell.tier === 1;
-      const speed = (isInner ? 550 : 340) + Math.random() * 420;
+      const speed = (isInner ? 700 : 480) + Math.random() * 450;
 
       mesh.userData = {
-        vx: normX * speed + (Math.random() - 0.5) * 120,
-        vy: normY * speed + 80 + Math.random() * 90, // Upward explosive kick
-        vz: 120 + Math.random() * 320, // Explosive burst towards camera
-        wx: (Math.random() - 0.5) * 8.5,
-        wy: (Math.random() - 0.5) * 8.5,
-        wz: (Math.random() - 0.5) * 7.0,
+        line,
+        vx: normX * speed + (Math.random() - 0.5) * 140,
+        vy: normY * speed + 90 + Math.random() * 120, // upward burst
+        vz: 160 + Math.random() * 420, // forward towards camera
+        wx: (Math.random() - 0.5) * 9.0,
+        wy: (Math.random() - 0.5) * 9.0,
+        wz: (Math.random() - 0.5) * 7.5,
         alpha: 1.0
       };
 
@@ -695,26 +642,25 @@ export default function CalmModeOverlay({ isActive, block, blockName, totalTasks
       shardMeshes.push(mesh);
     });
 
+    shardMeshesRef.current = shardMeshes;
+
     // 70+ Floating micro glass sparkle dust particles in 3D
     const sparkCount = 70;
     const sparkGeom = new THREE.BufferGeometry();
     const sparkPositions = new Float32Array(sparkCount * 3);
     const sparkVelocities = [];
 
-    const sparkOriginX = impactX - W / 2;
-    const sparkOriginY = -(impactY - H / 2);
-
     for (let i = 0; i < sparkCount; i++) {
-      sparkPositions[i * 3] = sparkOriginX;
-      sparkPositions[i * 3 + 1] = sparkOriginY;
+      sparkPositions[i * 3] = relTapX;
+      sparkPositions[i * 3 + 1] = relTapY;
       sparkPositions[i * 3 + 2] = 10;
 
       const angle = Math.random() * Math.PI * 2;
-      const spd = 280 + Math.random() * 600;
+      const spd = 320 + Math.random() * 650;
       sparkVelocities.push({
         vx: Math.cos(angle) * spd,
-        vy: Math.sin(angle) * spd + 40,
-        vz: 100 + Math.random() * 350,
+        vy: Math.sin(angle) * spd + 50,
+        vz: 120 + Math.random() * 380,
         alpha: 1.0
       });
     }
@@ -733,37 +679,41 @@ export default function CalmModeOverlay({ isActive, block, blockName, totalTasks
     let lastTime = performance.now();
     let cameraPushProgress = 0;
 
-    // 60fps Physical Simulation Loop
+    // Smooth 60fps Physical Simulation Loop
     const animateSimulation = (time) => {
-      const dt = Math.min(0.033, (time - lastTime) / 1000);
+      const dt = Math.min(0.024, (time - lastTime) / 1000);
       lastTime = time;
 
-      // 1. Update 3D Shards
       let anyShardAlive = false;
+
+      // 1. Update 3D Shards
       shardMeshes.forEach((mesh) => {
         const u = mesh.userData;
-        if (u.alpha <= 0.01) return;
+        if (u.alpha <= 0.01) {
+          mesh.visible = false;
+          return;
+        }
         anyShardAlive = true;
 
-        // Position & gravity update
+        // Position & strong gravitational downward pull
         mesh.position.x += u.vx * dt;
         mesh.position.y += u.vy * dt;
         mesh.position.z += u.vz * dt;
 
-        u.vy -= 1050 * dt; // Gravitational acceleration downward
-        u.vx *= 0.988;     // Air drag
-        u.vz *= 0.985;
+        u.vy -= 1400 * dt; // Strong gravity pulls all shards off screen
+        u.vx *= 0.99;
+        u.vz *= 0.988;
 
-        // 3D Tumbling rotation
+        // 3D Tumbling
         mesh.rotation.x += u.wx * dt;
         mesh.rotation.y += u.wy * dt;
         mesh.rotation.z += u.wz * dt;
 
-        // Smooth fade out as shards fly past
-        u.alpha -= dt * 0.78;
-        if (mesh.material) {
-          mesh.material.opacity = Math.max(0, u.alpha);
-        }
+        // Synchronous fade out: BOTH mesh face AND outline line fade to 0
+        u.alpha -= dt * 0.92;
+        const currentAlpha = Math.max(0, u.alpha);
+        if (mesh.material) mesh.material.opacity = currentAlpha;
+        if (u.line && u.line.material) u.line.material.opacity = currentAlpha * 0.85;
       });
 
       // 2. Update Sparkle Dust
@@ -776,23 +726,26 @@ export default function CalmModeOverlay({ isActive, block, blockName, totalTasks
         positions[i * 3 + 1] += sp.vy * dt;
         positions[i * 3 + 2] += sp.vz * dt;
 
-        sp.vy -= 500 * dt;
+        sp.vy -= 600 * dt;
         sp.vx *= 0.985;
         sp.vz *= 0.985;
-        sp.alpha -= dt * 0.95;
+        sp.alpha -= dt * 1.1;
       }
       sparkGeom.attributes.position.needsUpdate = true;
-      sparkMaterial.opacity = Math.max(0, sparkMaterial.opacity - dt * 0.65);
+      sparkMaterial.opacity = Math.max(0, sparkMaterial.opacity - dt * 0.85);
 
       // 3. Cinematic Camera Push forward through the broken glass
-      cameraPushProgress = Math.min(1.0, cameraPushProgress + dt * 1.1);
+      cameraPushProgress = Math.min(1.0, cameraPushProgress + dt * 1.25);
       const pushEase = gsap.parseEase('power2.out')(cameraPushProgress);
-      camera.position.z = cameraZ - pushEase * 320;
+      camera.position.z = cameraZ - pushEase * 340;
 
       renderer.render(scene, camera);
 
       if (anyShardAlive) {
         animationFrameRef.current = requestAnimationFrame(animateSimulation);
+      } else {
+        // All shards gone -> dispose immediately so nothing remains floating
+        cleanupThreeScene();
       }
     };
 
@@ -852,10 +805,8 @@ export default function CalmModeOverlay({ isActive, block, blockName, totalTasks
       navigator.vibrate?.([30, 40]);
       setCrackCount(2);
 
-      // Second optical ripple
       ripplesRef.current.push({ x: clickX, y: clickY, radius: 8, alpha: 0.95 });
 
-      // 25 micro-glass crystal sparks
       for (let i = 0; i < 25; i++) {
         const a = Math.random() * Math.PI * 2;
         const spd = 90 + Math.random() * 210;
@@ -890,7 +841,7 @@ export default function CalmModeOverlay({ isActive, block, blockName, totalTasks
         blockCardWrapperRef.current.style.pointerEvents = 'none';
       }
 
-      // Launch genuine Three.js WebGL physics shatter
+      // Launch buttery smooth Three.js WebGL physics shatter
       launchThreeShatter(clickX, clickY);
 
       // Cinematic boom push
@@ -902,11 +853,23 @@ export default function CalmModeOverlay({ isActive, block, blockName, totalTasks
         });
       }
 
-      // Transition seamlessly to full peaceful Zen environment
+      // Transition seamlessly to full peaceful Zen environment with ZERO remnants
       setTimeout(() => {
         setPhase('zen');
         const stopFn = sound.playSoothingCalmMusic();
         stopMusicRef.current = stopFn;
+
+        // Smoothly fade out and clean up Three.js WebGL canvas so ZERO shards can ever remain
+        if (threeRendererRef.current?.domElement) {
+          gsap.to(threeRendererRef.current.domElement, {
+            opacity: 0,
+            duration: 0.45,
+            ease: 'power1.out',
+            onComplete: () => {
+              cleanupThreeScene();
+            }
+          });
+        }
       }, 750);
     }
   };
@@ -921,7 +884,7 @@ export default function CalmModeOverlay({ isActive, block, blockName, totalTasks
       stopMusicRef.current();
       stopMusicRef.current = null;
     }
-
+    cleanupThreeScene();
     onClose?.();
   };
 
@@ -940,7 +903,8 @@ export default function CalmModeOverlay({ isActive, block, blockName, totalTasks
 
   if (!isActive) return null;
 
-  const currentScene = ZEN_SCENES[currentSceneIndex];
+  const activeVideos = zenVideos.length > 0 ? zenVideos : CURATED_PIXABAY_VIDEOS;
+  const currentVideo = activeVideos[currentVideoIndex] || activeVideos[0];
 
   return (
     <div
@@ -949,24 +913,26 @@ export default function CalmModeOverlay({ isActive, block, blockName, totalTasks
       onClick={phase === 'zen' ? handleExit : undefined}
     >
       {/* ========================================================
-          BACKGROUND 4K CINEMATIC NATURE / COSMIC VIDEO
-          Looping seamlessly; softly revealed behind the shattered glass
+          BACKGROUND 4K CINEMATIC NATURE / SPACE VIDEO (PIXABAY API)
+          Watermark-free, 4K/Full HD, looping seamlessly
           ======================================================== */}
-      <video
-        ref={videoRef}
-        key={currentScene.id}
-        src={currentScene.url}
-        poster={currentScene.poster}
-        autoPlay
-        loop
-        muted
-        playsInline
-        preload="auto"
-        disablePictureInPicture
-        className={`absolute inset-0 w-full h-full object-cover pointer-events-none transition-opacity duration-1000 ease-in-out ${
-          phase === 'zen' || phase === 'shattering' ? 'opacity-100' : 'opacity-0'
-        }`}
-      />
+      {currentVideo && (
+        <video
+          ref={videoRef}
+          key={currentVideo.id || currentVideo.url}
+          src={currentVideo.url}
+          poster={currentVideo.poster}
+          autoPlay
+          loop
+          muted
+          playsInline
+          preload="auto"
+          disablePictureInPicture
+          className={`absolute inset-0 w-full h-full object-cover pointer-events-none transition-opacity duration-1000 ease-in-out ${
+            phase === 'zen' || phase === 'shattering' ? 'opacity-100' : 'opacity-0'
+          }`}
+        />
+      )}
 
       {/* Atmospheric Soft Dark Scrim Overlay for Readability */}
       <div
@@ -984,11 +950,14 @@ export default function CalmModeOverlay({ isActive, block, blockName, totalTasks
 
       {/* ========================================================
           THREE.JS WEBGL FULLSCREEN CONTAINER FOR 3D SHATTER
+          Cleaned up immediately on transition to zen
           ======================================================== */}
-      <div
-        ref={threeMountRef}
-        className="fixed inset-0 pointer-events-none z-30 overflow-hidden"
-      />
+      {phase !== 'zen' && (
+        <div
+          ref={threeMountRef}
+          className="fixed inset-0 pointer-events-none z-30 overflow-hidden"
+        />
+      )}
 
       {/* Offscreen Canvas for High-DPI Card Texture Generation */}
       <canvas
@@ -1054,7 +1023,7 @@ export default function CalmModeOverlay({ isActive, block, blockName, totalTasks
 
       {/* ========================================================
           PHASE 2: FULL-SCREEN CINEMATIC ZEN EXPERIENCE
-          Extremely minimal: Environment is the hero. No cards. No clutter.
+          Extremely minimal: Environment is the hero. No cards. No clutter. No floating shards.
           ======================================================== */}
       {phase === 'zen' && (
         <div className="relative z-20 flex flex-col items-center justify-center text-center px-6 max-w-2xl pointer-events-auto animate-fade-in">
